@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}SPIKD — Dashboard{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <h1 class="page-title">Analysis Dashboard</h1>
+    <p class="page-subtitle">Upload a video to generate a cortical attention report.</p>
+  </div>
+
+  <div class="grid-2">
+
+    <!-- Upload Panel -->
+    <section class="card upload-card">
+      <h2 class="card-title">New Analysis</h2>
+
+      <div
+        id="drop-zone"
+        class="drop-zone"
+        ondragover="event.preventDefault(); this.classList.add('drag-over')"
+        ondragleave="this.classList.remove('drag-over')"
+        ondrop="handleDrop(event)"
+      >
+        <div class="drop-icon">&#9634;</div>
+        <p class="drop-label">Drag video here or <label for="video-input" class="drop-browse">browse</label></p>
+        <p class="drop-hint">MP4 / MOV / AVI &nbsp;|&nbsp; 1080p &nbsp;|&nbsp; 15–60 seconds</p>
+        <input id="video-input" type="file" accept="video/*" style="display:none" onchange="handleFileSelect(this)" />
+      </div>
+
+      <div id="file-info" class="file-info hidden">
+        <span id="file-name" class="file-name"></span>
+        <button class="btn-icon" onclick="clearFile()" title="Remove">&#10005;</button>
+      </div>
+
+      <div class="field" style="margin-top: 1.25rem">
+        <label for="ad-copy">Ad Script / Headline <span class="label-optional">(optional)</span></label>
+        <textarea
+          id="ad-copy"
+          name="ad_copy"
+          rows="5"
+          placeholder="Paste your ad copy or headline here. Llama 3.2 will compare it against the brain waveform and score alignment."
+        ></textarea>
+        <p class="field-hint">Leave blank for waveform-only analysis.</p>
+      </div>
+
+      <button id="submit-btn" class="btn btn-primary btn-full" onclick="submitAnalysis()" disabled>
+        Run Analysis
+      </button>
+
+      <div id="upload-error" class="alert alert-error hidden"></div>
+    </section>
+
+    <!-- Recent Jobs Panel -->
+    <section class="card">
+      <h2 class="card-title">Recent Jobs</h2>
+
+      {% set jobs = recent_jobs | list %}
+      {% if jobs %}
+      <div class="job-list">
+        {% for job in jobs %}
+        <div class="job-row">
+          <div class="job-meta">
+            <span class="job-file">{{ job.filename or 'Unknown' }}</span>
+            <span class="job-id">{{ job.job_id[:8] }}</span>
+          </div>
+          <div class="job-right">
+            <span class="badge badge-{{ job.status }}">{{ job.status }}</span>
+            {% if job.status == 'done' %}
+            <a href="/result/{{ job.job_id }}" class="btn btn-sm">View</a>
+            {% elif job.status == 'running' or job.status == 'queued' %}
+            <a href="/progress/{{ job.job_id }}" class="btn btn-sm">Track</a>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p>No analyses run yet. Upload a video to begin.</p>
+      </div>
+      {% endif %}
+    </section>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let selectedFile = null;
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) setFile(file);
+}
+
+function handleFileSelect(input) {
+  if (input.files[0]) setFile(input.files[0]);
+}
+
+function setFile(file) {
+  selectedFile = file;
+  document.getElementById('file-name').textContent = file.name + '  (' + (file.size / 1048576).toFixed(1) + ' MB)';
+  document.getElementById('file-info').classList.remove('hidden');
+  document.getElementById('drop-zone').classList.add('has-file');
+  document.getElementById('submit-btn').disabled = false;
+}
+
+function clearFile() {
+  selectedFile = null;
+  document.getElementById('file-info').classList.add('hidden');
+  document.getElementById('drop-zone').classList.remove('has-file');
+  document.getElementById('submit-btn').disabled = true;
+  document.getElementById('video-input').value = '';
+}
+
+async function submitAnalysis() {
+  if (!selectedFile) return;
+
+  const btn = document.getElementById('submit-btn');
+  const errBox = document.getElementById('upload-error');
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+  errBox.classList.add('hidden');
+
+  const fd = new FormData();
+  fd.append('video', selectedFile);
+  fd.append('ad_copy', document.getElementById('ad-copy').value);
+
+  try {
+    const res = await fetch('/analyze', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const d = await res.json();
+      throw new Error(d.detail || 'Upload failed.');
+    }
+    const data = await res.json();
+    window.location.href = '/progress/' + data.job_id;
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Run Analysis';
+  }
+}
+</script>
+{% endblock %}

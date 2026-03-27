@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SPIKD — Sign In</title>
+  <link rel="stylesheet" href="/static/css/main.css" />
+</head>
+<body class="login-body">
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-brand">
+        <span class="login-logo">SPIKD</span>
+        <p class="login-tagline">Cortical Attention Diagnostic Platform</p>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/login" class="login-form" autocomplete="off">
+        <div class="field">
+          <label for="username">Username</label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            autocomplete="username"
+            required
+            placeholder="Enter username"
+          />
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            placeholder="Enter password"
+          />
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+      </form>
+
+      <p class="login-footer">
+        TRIBE v2 &nbsp;|&nbsp; Glasser MMP1.0 &nbsp;|&nbsp; Llama 3.2
+      </p>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,46 @@
+# SPIKD — Python Dependencies
+# Install: pip install -r requirements.txt
+
+# ── Web framework ──────────────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+itsdangerous==2.2.0
+starlette==0.37.2
+jinja2==3.1.4
+
+# ── ML / PyTorch ───────────────────────────────────────────────────────
+# Install PyTorch separately with CUDA support:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+torch>=2.3.0
+torchvision>=0.18.0
+
+# ── Video / image processing ───────────────────────────────────────────
+opencv-python-headless==4.9.0.80
+Pillow==10.3.0
+
+# ── Numerical ─────────────────────────────────────────────────────────
+numpy==1.26.4
+scipy==1.13.0
+
+# ── Neuroimaging (atlas loading) ───────────────────────────────────────
+nibabel==5.2.0
+
+# ── LLM ───────────────────────────────────────────────────────────────
+requests==2.32.0
+
+# ── PDF ───────────────────────────────────────────────────────────────
+reportlab==4.2.0
+
+# ── Plotting (headless, Agg backend) ──────────────────────────────────
+matplotlib==3.9.0
+
+# ── Config ────────────────────────────────────────────────────────────
+python-dotenv==1.0.1
+
+# ── Model weights (HuggingFace) ────────────────────────────────────────
+huggingface_hub==0.23.0
+transformers==4.41.0
+accelerate==0.30.0
+einops==0.7.0
+timm==1.0.3

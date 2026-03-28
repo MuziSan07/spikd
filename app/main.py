@@ -1,0 +1,251 @@
+import os
+import sys
+import uuid
+import asyncio
+import json
+from pathlib import Path
+
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Depends
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import settings
+from app.auth import require_login, verify_credentials
+from pipeline.tribe_processor import TribeProcessor
+from pipeline.llm_summary import LLMSummary
+from pipeline.pdf_generator import PDFGenerator
+
+# ── App init ──────────────────────────────────────────────────
+app = FastAPI(title="SPIKD", docs_url=None, redoc_url=None)
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SESSION_SECRET,
+    max_age=86400,
+)
+
+BASE_DIR = Path(__file__).parent
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+# Shared pipeline instances (loaded once on startup)
+tribe_processor: TribeProcessor = None
+llm_summary: LLMSummary = None
+pdf_generator: PDFGenerator = None
+
+# In-memory job tracker  {job_id: {status, progress, message, result_path}}
+JOBS: dict = {}
+
+
+# ── Startup ───────────────────────────────────────────────────
+@app.on_event("startup")
+async def startup_event():
+    global tribe_processor, llm_summary, pdf_generator
+    tribe_processor = TribeProcessor(model_path=settings.TRIBE_MODEL_PATH)
+    llm_summary     = LLMSummary(ollama_host=settings.OLLAMA_HOST)
+    pdf_generator   = PDFGenerator(output_dir=settings.SESSION_DIR)
+
+
+# ── Auth routes ───────────────────────────────────────────────
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    if request.session.get("user"):
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+):
+    if verify_credentials(username, password):
+        request.session["user"] = username
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(
+        "login.html", {"request": request, "error": "Invalid credentials."}
+    )
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=302)
+
+
+# ── Dashboard ─────────────────────────────────────────────────
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request, user: str = Depends(require_login)):
+    recent_jobs = [
+        {"job_id": jid, **meta}
+        for jid, meta in JOBS.items()
+        if meta.get("user") == user
+    ][-10:]
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {"request": request, "user": user, "recent_jobs": reversed(recent_jobs)},
+    )
+
+
+# ── Upload & process ──────────────────────────────────────────
+@app.post("/analyze")
+async def analyze(
+    request: Request,
+    video: UploadFile = File(...),
+    ad_copy: str = Form(""),
+    user: str = Depends(require_login),
+):
+    # Validate file type
+    if not video.content_type.startswith("video/"):
+        raise HTTPException(status_code=400, detail="Uploaded file must be a video.")
+
+    job_id   = str(uuid.uuid4())
+    job_dir  = Path(settings.SESSION_DIR) / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    video_path = job_dir / video.filename
+    with open(video_path, "wb") as f:
+        content = await video.read()
+        f.write(content)
+
+    JOBS[job_id] = {
+        "user": user,
+        "status": "queued",
+        "progress": 0,
+        "message": "Job queued.",
+        "filename": video.filename,
+        "ad_copy": ad_copy,
+        "result_path": None,
+    }
+
+    asyncio.create_task(
+        run_pipeline(job_id, str(video_path), ad_copy, user)
+    )
+
+    return JSONResponse({"job_id": job_id})
+
+
+# ── Pipeline background task ──────────────────────────────────
+async def run_pipeline(job_id: str, video_path: str, ad_copy: str, user: str):
+    def update(progress: int, message: str, status: str = "running"):
+        JOBS[job_id].update({"progress": progress, "message": message, "status": status})
+
+    try:
+        update(5, "Extracting video frames...")
+        loop = asyncio.get_event_loop()
+
+        # STEP 1 — TRIBE v2 brain prediction
+        update(15, "Running TRIBE v2 cortical surface prediction...")
+        brain_result = await loop.run_in_executor(
+            None, tribe_processor.process, video_path
+        )
+        # brain_result = {
+        #   "waveform": np.array [T],
+        #   "peak_engagement_sec": float,
+        #   "drop_timestamp_sec": float,
+        #   "fps": float,
+        #   "duration_sec": float,
+        #   "waveform_png_path": str,
+        # }
+
+        update(55, "Waveform extracted. Running Llama 3.2 alignment analysis...")
+
+        # STEP 2 — LLM summary + alignment
+        llm_result = await loop.run_in_executor(
+            None, llm_summary.generate, brain_result, ad_copy
+        )
+        # llm_result = {
+        #   "summary": str,
+        #   "alignment": str,   # only if ad_copy provided
+        #   "alignment_score": str,
+        # }
+
+        update(80, "Generating PDF report...")
+
+        # STEP 3 — PDF
+        job_dir    = Path(settings.SESSION_DIR) / job_id
+        pdf_path   = await loop.run_in_executor(
+            None,
+            pdf_generator.generate,
+            job_id, job_dir, brain_result, llm_result, ad_copy, user,
+        )
+
+        JOBS[job_id]["result_path"] = str(pdf_path)
+        update(100, "Complete.", "done")
+
+    except Exception as exc:
+        JOBS[job_id].update({"status": "error", "message": str(exc), "progress": 0})
+
+
+# ── Polling endpoint ──────────────────────────────────────────
+@app.get("/status/{job_id}")
+async def job_status(job_id: str, user: str = Depends(require_login)):
+    job = JOBS.get(job_id)
+    if not job or job["user"] != user:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return JSONResponse(job)
+
+
+# ── Result page ───────────────────────────────────────────────
+@app.get("/result/{job_id}", response_class=HTMLResponse)
+async def result_page(request: Request, job_id: str, user: str = Depends(require_login)):
+    job = JOBS.get(job_id)
+    if not job or job["user"] != user:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if job["status"] != "done":
+        return RedirectResponse(f"/progress/{job_id}", status_code=302)
+
+    waveform_img = f"/sessions/{job_id}/waveform.png"
+    return templates.TemplateResponse(
+        "result.html",
+        {
+            "request": request,
+            "user": user,
+            "job": job,
+            "job_id": job_id,
+            "waveform_img": waveform_img,
+        },
+    )
+
+
+# ── Progress page ─────────────────────────────────────────────
+@app.get("/progress/{job_id}", response_class=HTMLResponse)
+async def progress_page(request: Request, job_id: str, user: str = Depends(require_login)):
+    job = JOBS.get(job_id)
+    if not job or job["user"] != user:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return templates.TemplateResponse(
+        "progress.html", {"request": request, "user": user, "job_id": job_id}
+    )
+
+
+# ── PDF download ──────────────────────────────────────────────
+@app.get("/download/{job_id}")
+async def download_pdf(job_id: str, user: str = Depends(require_login)):
+    job = JOBS.get(job_id)
+    if not job or job["user"] != user or job["status"] != "done":
+        raise HTTPException(status_code=404, detail="Report not available.")
+    pdf_path = Path(job["result_path"])
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="PDF file missing.")
+    return FileResponse(
+        str(pdf_path),
+        media_type="application/pdf",
+        filename=f"SPIKD_Report_{job_id[:8]}.pdf",
+    )
+
+
+# ── Static session assets (waveform PNGs) ─────────────────────
+@app.get("/sessions/{job_id}/{filename}")
+async def session_asset(job_id: str, filename: str, user: str = Depends(require_login)):
+    job = JOBS.get(job_id)
+    if not job or job["user"] != user:
+        raise HTTPException(status_code=403)
+    path = Path(settings.SESSION_DIR) / job_id / filename
+    if not path.exists():
+        raise HTTPException(status_code=404)
+    return FileResponse(str(path))

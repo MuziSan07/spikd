@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}SPIKD{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/main.css" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% if request.session.get('user') %}
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="/" class="logo">SPIKD</a>
+      <nav class="nav">
+        <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
+        <span class="nav-user">{{ request.session.get('user') }}</span>
+        <a href="/logout" class="nav-link nav-logout">Sign out</a>
+      </nav>
+    </div>
+  </header>
+  {% endif %}
+
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="/static/js/main.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

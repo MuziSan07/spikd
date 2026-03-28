@@ -1,13 +1,17 @@
 """
 pipeline/llm_summary.py
 
-Sends brain waveform data + optional ad copy to Llama 3.2 (via Ollama)
-and returns a structured analysis.
+Sends brain waveform data + optional ad copy to Llama 3.2 (via Ollama).
+Returns structured clinical observations formatted as:
+
+    0:04 [ALERT]: Text Overload detected. Activation spike at hook.
+    0:11 [OK]: Sustained DAN engagement above 0.6 threshold.
+    0:19 [WARN]: Attention decay rate exceeds -0.03/sec.
+    0:27 [NOTE]: Hook landed before peak resonance at 0:31.
 
 Two modes:
-  1. Waveform-only summary  — if no ad copy is provided
-  2. Alignment analysis     — if ad copy is provided, compares ad intent
-                              against the measured attention waveform
+  1. Waveform-only  — no ad copy provided
+  2. Alignment      — ad copy provided, scored High / Medium / Low
 """
 
 import json
@@ -19,7 +23,7 @@ import requests
 
 logger = logging.getLogger("spikd.llm")
 
-TIMEOUT = 120  # seconds
+TIMEOUT = 120
 
 
 class LLMSummary:
@@ -30,136 +34,149 @@ class LLMSummary:
     # ── Public entry point ─────────────────────────────────────────────────────
     def generate(self, brain_result: dict, ad_copy: str = "") -> dict:
         """
-        Parameters
-        ----------
-        brain_result : dict
-            Output from TribeProcessor.process()
-        ad_copy : str
-            Optional ad script / headline text to align against.
-
-        Returns
-        -------
-        dict:
-            summary          : str   — brain engagement narrative
-            alignment        : str   — alignment analysis (empty if no ad copy)
-            alignment_score  : str   — "High / Medium / Low / N/A"
-            key_findings     : list  — bullet list of key findings
+        Returns dict:
+            summary          : str         — one-sentence summary
+            observations     : list[str]   — clinical observation lines
+            key_findings     : list[str]   — supporting bullet points
+            alignment        : str         — alignment analysis (if ad copy given)
+            alignment_score  : str         — High / Medium / Low / N/A
         """
-        waveform             = brain_result.get("waveform", [])
-        peak_sec             = brain_result.get("peak_engagement_sec", 0)
-        drop_sec             = brain_result.get("drop_timestamp_sec", 0)
-        duration_sec         = brain_result.get("duration_sec", 0)
-        simulation_mode      = brain_result.get("simulation_mode", False)
+        wf           = brain_result.get("waveform", [])
+        peak_sec     = brain_result.get("peak_engagement_sec", 0)
+        drop_sec     = brain_result.get("drop_timestamp_sec", 0)
+        duration_sec = brain_result.get("duration_sec", 0)
+        fps          = brain_result.get("fps", 30.0)
+        sim_mode     = brain_result.get("simulation_mode", False)
 
-        # Summarise waveform numerically for the prompt
-        wf_array       = waveform if isinstance(waveform, list) else list(waveform)
-        avg_engagement = round(sum(wf_array) / len(wf_array), 3) if wf_array else 0
-        max_engagement = round(max(wf_array), 3) if wf_array else 0
+        avg_eng = round(sum(wf) / len(wf), 3) if wf else 0
+        max_eng = round(max(wf), 3)           if wf else 0
 
-        prompt = self._build_prompt(
-            duration_sec       = duration_sec,
-            peak_sec           = peak_sec,
-            drop_sec           = drop_sec,
-            avg_engagement     = avg_engagement,
-            max_engagement     = max_engagement,
-            ad_copy            = ad_copy.strip(),
-            simulation_mode    = simulation_mode,
+        prompt  = self._build_prompt(
+            duration_sec=duration_sec,
+            peak_sec=peak_sec,
+            drop_sec=drop_sec,
+            avg_eng=avg_eng,
+            max_eng=max_eng,
+            fps=fps,
+            ad_copy=ad_copy.strip(),
+            sim_mode=sim_mode,
         )
 
-        raw_response = self._call_ollama(prompt)
-        parsed       = self._parse_response(raw_response, bool(ad_copy.strip()))
+        raw    = self._call_ollama(prompt)
+        parsed = self._parse(raw, bool(ad_copy.strip()))
         return parsed
 
-    # ── Prompt construction ────────────────────────────────────────────────────
+    # ── Prompt ────────────────────────────────────────────────────────────────
     def _build_prompt(
         self,
-        duration_sec: float,
-        peak_sec: float,
-        drop_sec: float,
-        avg_engagement: float,
-        max_engagement: float,
-        ad_copy: str,
-        simulation_mode: bool,
+        duration_sec, peak_sec, drop_sec,
+        avg_eng, max_eng, fps,
+        ad_copy, sim_mode,
     ) -> str:
 
+        def fmt(sec):
+            return f"{int(sec)//60}:{int(sec)%60:02d}"
+
         sim_note = (
-            "\n[NOTE: Data was generated in simulation mode — "
-            "real TRIBE v2 weights were not loaded. "
-            "This analysis demonstrates the pipeline only.]\n"
-            if simulation_mode else ""
+            "[NOTE: SIMULATION MODE — synthetic data, not real TRIBE v2 output]\n"
+            if sim_mode else ""
         )
 
-        base = f"""{sim_note}
-You are a neuroscience-informed analyst for a clinical attention diagnostic tool called SPIKD.
-You have been given the following brain engagement data derived from TRIBE v2 cortical surface modelling,
-specifically from the Dorsal Attention Network (DAN) and Primary Visual Cortex (V1) as mapped
-using the Glasser HCP MMP1.0 atlas.
+        has_ad = bool(ad_copy)
 
-BRAIN ENGAGEMENT DATA:
-- Video duration:      {duration_sec:.1f} seconds
-- Peak engagement at:  {peak_sec:.1f} seconds
-- Engagement drop at:  {drop_sec:.1f} seconds
-- Average engagement:  {avg_engagement:.3f} (normalised 0–1)
-- Maximum engagement:  {max_engagement:.3f} (normalised 0–1)
+        prompt = f"""{sim_note}
+You are a clinical neuroscience analyst operating the SPIKD attention diagnostic system.
+You have received TRIBE v2 cortical surface model output, atlas-masked to the
+Dorsal Attention Network (DAN) and Primary Visual Cortex (V1) using Glasser MMP1.0.
+The output has been collapsed to a 1D normalised attention waveform.
 
-TASK:
-Write a precise, clinical-style report with the following JSON structure.
-Return ONLY valid JSON, no markdown, no code blocks, no preamble.
+WAVEFORM METRICS:
+  Video duration       : {fmt(duration_sec)} ({duration_sec:.1f}s)
+  Peak resonance at    : {fmt(peak_sec)} ({peak_sec:.2f}s)
+  Engagement drop at   : {fmt(drop_sec)} ({drop_sec:.2f}s)
+  Average activation   : {avg_eng:.3f}  (normalised 0-1)
+  Maximum activation   : {max_eng:.3f}  (normalised 0-1)
+  Frame rate           : {fps:.1f} fps
+
+CLINICAL OBSERVATION FORMAT:
+Each observation must follow this exact format:
+  M:SS [TAG]: Clinical finding in one concise sentence.
+
+Tags must be exactly one of:
+  [ALERT] — critical attention failure, overload, or sharp decay
+  [OK]    — positive engagement signal, sustained activation
+  [WARN]  — sub-optimal signal, moderate decay, or risk of dropout
+  [NOTE]  — contextual finding, timing observation, or recommendation
+
+Generate 4 to 6 observations distributed across the video timeline,
+starting from 0:00 and progressing to the end of the video.
+Each observation must reference a specific timestamp derived from the waveform data.
+
+Return ONLY a valid JSON object. No markdown. No code blocks. No preamble.
 
 {{
-  "summary": "3–4 sentence paragraph describing the attention trajectory, key engagement moments, and clinical interpretation of the waveform.",
+  "summary": "One sentence clinical summary of the attention profile.",
+  "observations": [
+    "0:00 [TAG]: Finding.",
+    "0:XX [TAG]: Finding.",
+    "0:XX [TAG]: Finding.",
+    "0:XX [TAG]: Finding."
+  ],
   "key_findings": [
     "Finding 1",
     "Finding 2",
     "Finding 3"
   ],
-  "alignment": "{self._alignment_placeholder(ad_copy)}",
-  "alignment_score": "{self._score_placeholder(ad_copy)}"
+  "alignment": "{self._alignment_placeholder(has_ad)}",
+  "alignment_score": "{self._score_placeholder(has_ad)}"
 }}
 """
 
-        if ad_copy:
-            base += f"""
-AD COPY / HEADLINE:
-\"\"\"{ad_copy}\"\"\"
+        if has_ad:
+            prompt += f"""
+AD COPY PROVIDED FOR ALIGNMENT ANALYSIS:
+\"\"\"
+{ad_copy}
+\"\"\"
 
 ALIGNMENT TASK:
-In the "alignment" field, analyse whether the ad copy's intended message, emotional hooks,
-and call-to-action timing align with the measured attention waveform.
-Specifically address:
-  1. Does the ad copy's hook land before or after the peak engagement at {peak_sec:.1f}s?
-  2. Does the engagement drop at {drop_sec:.1f}s suggest the viewer lost attention before
-     the primary message was delivered?
-  3. What specific changes to copy timing or structure would improve neural alignment?
+In the "alignment" field, write a clinical paragraph (3-5 sentences) analysing
+whether the ad copy's structure, hook timing, and call-to-action align with
+the measured attention waveform. Specifically address:
+
+  1. Does the ad copy's hook land before or after the peak resonance at {fmt(peak_sec)}?
+  2. Does the engagement drop at {fmt(drop_sec)} suggest the viewer lost attention
+     before the primary message or CTA was delivered?
+  3. What specific structural change to the ad copy would improve neural alignment?
 
 Set "alignment_score" to exactly one of: "High", "Medium", or "Low".
 """
         else:
-            base += """
-No ad copy was provided. Set "alignment" to "" and "alignment_score" to "N/A".
+            prompt += """
+No ad copy provided.
+Set "alignment" to "" and "alignment_score" to "N/A".
 """
 
-        return base.strip()
+        return prompt.strip()
 
-    def _alignment_placeholder(self, ad_copy: str) -> str:
-        return "TO BE FILLED BY MODEL" if ad_copy else ""
+    def _alignment_placeholder(self, has_ad: bool) -> str:
+        return "TO BE FILLED BY MODEL" if has_ad else ""
 
-    def _score_placeholder(self, ad_copy: str) -> str:
-        return "TO BE FILLED BY MODEL" if ad_copy else "N/A"
+    def _score_placeholder(self, has_ad: bool) -> str:
+        return "TO BE FILLED BY MODEL" if has_ad else "N/A"
 
-    # ── Ollama API call ────────────────────────────────────────────────────────
+    # ── Ollama call ───────────────────────────────────────────────────────────
     def _call_ollama(self, prompt: str) -> str:
         payload = {
             "model":  self.model,
             "prompt": prompt,
             "stream": False,
             "options": {
-                "temperature":   0.3,
-                "num_predict":   1024,
-                "top_p":         0.9,
+                "temperature": 0.25,
+                "num_predict": 1200,
+                "top_p":       0.9,
             },
         }
-
         try:
             resp = requests.post(
                 f"{self.host}/api/generate",
@@ -167,21 +184,19 @@ No ad copy was provided. Set "alignment" to "" and "alignment_score" to "N/A".
                 timeout=TIMEOUT,
             )
             resp.raise_for_status()
-            data = resp.json()
-            return data.get("response", "")
+            return resp.json().get("response", "")
         except requests.exceptions.ConnectionError:
             logger.error("Ollama not reachable at %s", self.host)
-            return self._fallback_response()
+            return self._fallback()
         except requests.exceptions.Timeout:
-            logger.error("Ollama request timed out after %ds", TIMEOUT)
-            return self._fallback_response()
+            logger.error("Ollama timed out after %ds", TIMEOUT)
+            return self._fallback()
         except Exception as exc:
-            logger.error("Ollama call failed: %s", exc)
-            return self._fallback_response()
+            logger.error("Ollama error: %s", exc)
+            return self._fallback()
 
-    # ── Response parsing ───────────────────────────────────────────────────────
-    def _parse_response(self, raw: str, has_ad_copy: bool) -> dict:
-        # Strip any accidental markdown fences
+    # ── Parse response ────────────────────────────────────────────────────────
+    def _parse(self, raw: str, has_ad: bool) -> dict:
         cleaned = raw.strip()
         for fence in ["```json", "```"]:
             cleaned = cleaned.replace(fence, "")
@@ -191,31 +206,37 @@ No ad copy was provided. Set "alignment" to "" and "alignment_score" to "N/A".
             data = json.loads(cleaned)
             return {
                 "summary":         str(data.get("summary", "")),
+                "observations":    list(data.get("observations", [])),
                 "key_findings":    list(data.get("key_findings", [])),
                 "alignment":       str(data.get("alignment", "")),
                 "alignment_score": str(data.get("alignment_score", "N/A")),
             }
         except json.JSONDecodeError:
-            logger.warning("LLM response was not valid JSON — using raw text.")
+            logger.warning("LLM response was not valid JSON — using raw fallback.")
             return {
                 "summary":         raw.strip() or "Analysis unavailable.",
+                "observations":    [f"0:00 [NOTE]: {raw.strip()[:200]}"] if raw.strip() else [],
                 "key_findings":    [],
                 "alignment":       "",
                 "alignment_score": "N/A",
             }
 
-    # ── Fallback (Ollama offline) ──────────────────────────────────────────────
-    def _fallback_response(self) -> str:
+    # ── Fallback ──────────────────────────────────────────────────────────────
+    def _fallback(self) -> str:
         return json.dumps({
             "summary": (
-                "LLM analysis unavailable. Ollama service was not reachable. "
-                "Ensure Ollama is running (ollama serve) and Llama 3.2 is pulled "
-                "(ollama pull llama3.2) before running the pipeline."
+                "LLM analysis unavailable. Ollama service not reachable. "
+                "Ensure Ollama is running and Llama 3.2 is pulled."
             ),
+            "observations": [
+                "0:00 [WARN]: LLM service offline. Start Ollama: systemctl start ollama",
+                "0:00 [NOTE]: Run 'ollama pull llama3.2' to download the model.",
+                "0:00 [NOTE]: Waveform data is valid. Only narrative analysis is missing.",
+            ],
             "key_findings": [
                 "Brain waveform extracted successfully.",
-                "Attention peak and drop timestamps are recorded in the data section.",
-                "LLM narrative requires Ollama to be running.",
+                "Peak and drop timestamps are recorded in the stats table.",
+                "LLM narrative requires Ollama to be running on port 11434.",
             ],
             "alignment":       "",
             "alignment_score": "N/A",

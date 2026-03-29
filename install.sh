@@ -1,21 +1,16 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  SPIKD — One-Click Installer for RunPod (RTX 4090 / CUDA 12.x)
+#  SPIKD v2 — One-Click Installer
 #
-#  Usage on a fresh RunPod instance:
-#    chmod +x install.sh && bash install.sh
+#  Usage on any fresh RunPod instance:
+#    curl -fsSL https://raw.githubusercontent.com/MuziSan07/spikd/master/install.sh | bash
 #
-#  What this does:
-#    1. System dependencies (ffmpeg, fonts, git)
-#    2. Ollama + Llama 3.2
-#    3. Python venv + all packages (PyTorch CUDA 12.1, FastAPI, ReportLab...)
-#    4. Glasser HCP MMP1.0 atlas files
-#    5. TRIBE v2 weight download attempt (HuggingFace)
-#    6. .env configuration
-#    7. systemd services (spikd + ollama)
-#    8. Starts dashboard on port 8000
+#  OR:
+#    wget -qO install.sh https://raw.githubusercontent.com/MuziSan07/spikd/master/install.sh
+#    bash install.sh
 #
-#  All GPU compute and storage costs run on the client's RunPod account.
+#  The script will ask for your HuggingFace token.
+#  That is the only input required. Everything else is automatic.
 # ============================================================================
 
 set -euo pipefail
@@ -25,13 +20,13 @@ log()  { echo -e "${GRN}[SPIKD]${NC} $1"; }
 warn() { echo -e "${YLW}[WARN] ${NC} $1"; }
 die()  { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-# ── Configurable vars ─────────────────────────────────────────────────────────
-SPIKD_DIR="${SPIKD_DIR:-/workspace/spikd}"
+SPIKD_REPO="https://github.com/MuziSan07/spikd.git"
+SPIKD_BRANCH="master"
+SPIKD_DIR="/workspace/spikd"
 VENV="$SPIKD_DIR/venv"
-PORT="${PORT:-8000}"
-CUDA_URL="https://download.pytorch.org/whl/cu121"
-HF_TRIBE_REPO="${HF_TRIBE_REPO:-facebook/tribe-v2}"
+PORT="8000"
 
+clear
 echo ""
 echo "  ███████╗██████╗ ██╗██╗  ██╗██████╗ "
 echo "  ██╔════╝██╔══██╗██║██║ ██╔╝██╔══██╗"
@@ -40,45 +35,61 @@ echo "  ╚════██║██╔═══╝ ██║██╔═█�
 echo "  ███████║██║     ██║██║  ██╗██████╔╝"
 echo "  ╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝╚═════╝ "
 echo ""
-log "Cortical Attention Diagnostic Platform — Installer v1.0"
+echo "  Cortical Attention Diagnostic Platform v2"
+echo "  One-Click Installer"
+echo ""
+echo "═══════════════════════════════════════════════════════"
 echo ""
 
-# ── 0. Pre-flight checks ──────────────────────────────────────────────────────
-log "Running pre-flight checks..."
-[[ $EUID -eq 0 ]] || die "Run as root: sudo bash install.sh"
-command -v python3 &>/dev/null || die "python3 not found."
-command -v pip3    &>/dev/null || die "pip3 not found."
-command -v git     &>/dev/null || die "git not found."
-command -v curl    &>/dev/null || die "curl not found."
+# ── Ask for HuggingFace token ─────────────────────────────────────────────────
+echo "  A HuggingFace token is required to download TRIBE v2 and Llama 3.2."
+echo "  Generate one at: https://huggingface.co/settings/tokens"
+echo "  Make sure you have accepted the terms for:"
+echo "    - facebook/tribev2"
+echo "    - meta-llama/Llama-3.2-3B"
+echo ""
+read -rsp "  Enter your HuggingFace token (input hidden): " HF_TOKEN
+echo ""
 
-GPU_OK=$(nvidia-smi &>/dev/null && echo "yes" || echo "no")
-[[ "$GPU_OK" == "yes" ]] && log "GPU detected." || warn "nvidia-smi not responding — GPU may not be ready yet."
+if [[ -z "$HF_TOKEN" ]]; then
+    die "No token provided. Exiting."
+fi
 
-FREE_KB=$(df /workspace 2>/dev/null | awk 'NR==2{print $4}' || echo "0")
-FREE_GB=$(( FREE_KB / 1048576 ))
-[[ $FREE_GB -lt 30 ]] && warn "Only ${FREE_GB}GB free. Recommend 40GB+ for model weights."
+export HF_TOKEN="$HF_TOKEN"
+echo ""
+log "Token received. Starting installation..."
+echo ""
 
 # ── 1. System packages ────────────────────────────────────────────────────────
-log "Installing system packages..."
+log "Step 1/9 — Installing system packages..."
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    ffmpeg libgl1-mesa-glx libglib2.0-0 \
-    curl wget git unzip \
+    zstd ffmpeg git curl wget unzip \
+    libgl1-mesa-glx libglib2.0-0 \
     fonts-liberation fonts-dejavu-core \
     python3-venv python3-dev build-essential \
     > /dev/null 2>&1
 log "System packages installed."
 
-# ── 2. Ollama + Llama 3.2 ─────────────────────────────────────────────────────
-log "Installing Ollama..."
+# ── 2. Clone SPIKD repo ───────────────────────────────────────────────────────
+log "Step 2/9 — Cloning SPIKD repository..."
+if [[ -d "$SPIKD_DIR/.git" ]]; then
+    log "Repository already cloned — pulling latest..."
+    cd "$SPIKD_DIR" && git pull origin "$SPIKD_BRANCH" --quiet
+else
+    git clone -b "$SPIKD_BRANCH" "$SPIKD_REPO" "$SPIKD_DIR" --quiet
+fi
+mkdir -p "$SPIKD_DIR"/{data/sessions,atlas_data,models/tribe_v2,logs}
+log "Repository ready at $SPIKD_DIR"
+
+# ── 3. Ollama + Llama 3.2 ─────────────────────────────────────────────────────
+log "Step 3/9 — Installing Ollama..."
 if ! command -v ollama &>/dev/null; then
     curl -fsSL https://ollama.ai/install.sh | sh > /dev/null 2>&1
 fi
-
 pkill -f "ollama serve" 2>/dev/null || true
 nohup ollama serve > /tmp/ollama.log 2>&1 &
-sleep 6
-
+sleep 8
 if ollama list 2>/dev/null | grep -q "llama3.2"; then
     log "Llama 3.2 already present."
 else
@@ -86,28 +97,17 @@ else
     ollama pull llama3.2 || warn "Llama 3.2 pull failed. Run: ollama pull llama3.2"
 fi
 
-# ── 3. SPIKD directory ────────────────────────────────────────────────────────
-log "Setting up $SPIKD_DIR..."
-mkdir -p "$SPIKD_DIR"/{data/sessions,atlas_data,models/tribe_v2,logs}
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ "$SCRIPT_DIR" != "$SPIKD_DIR" ]]; then
-    log "Copying application files..."
-    cp -r "$SCRIPT_DIR"/. "$SPIKD_DIR"/
-fi
-
-# ── 4. Python virtual environment ─────────────────────────────────────────────
-log "Creating Python virtual environment..."
+# ── 4. Python venv ────────────────────────────────────────────────────────────
+log "Step 4/9 — Setting up Python environment..."
 python3 -m venv "$VENV"
-# shellcheck disable=SC1091
 source "$VENV/bin/activate"
-
 pip install --upgrade pip setuptools wheel -q
 
-log "Installing PyTorch with CUDA 12.1..."
-pip install -q torch torchvision torchaudio --index-url "$CUDA_URL"
+log "Installing PyTorch (CUDA 12.1)..."
+pip install -q torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/cu121
 
-log "Installing application dependencies..."
+log "Installing application packages..."
 pip install -q \
     "fastapi==0.111.0" \
     "uvicorn[standard]==0.29.0" \
@@ -115,164 +115,127 @@ pip install -q \
     "itsdangerous==2.2.0" \
     "starlette==0.37.2" \
     "jinja2==3.1.4" \
-    "opencv-python-headless==4.9.0.80" \
-    "Pillow==10.3.0" \
+    "opencv-python-headless" \
+    "Pillow" \
     "numpy==1.26.4" \
-    "scipy==1.13.0" \
-    "nibabel==5.2.0" \
-    "requests==2.32.0" \
-    "reportlab==4.2.0" \
-    "matplotlib==3.9.0" \
-    "python-dotenv==1.0.1" \
-    "huggingface_hub==0.23.0" \
-    "transformers==4.41.0" \
-    "accelerate==0.30.0" \
-    "einops==0.7.0" \
-    "timm==1.0.3"
+    "scipy" \
+    "nibabel" \
+    "requests" \
+    "reportlab" \
+    "matplotlib" \
+    "python-dotenv" \
+    "huggingface_hub" \
+    "uv"
 
-deactivate
-log "Python environment ready."
-
-# ── 5. Atlas files ────────────────────────────────────────────────────────────
-log "Downloading Glasser HCP MMP1.0 atlas files..."
-ATLAS_DIR="$SPIKD_DIR/atlas_data"
-
-dl_atlas() {
-    local url="$1" dest="$2"
-    [[ -f "$dest" ]] && { log "  Present: $(basename "$dest")"; return; }
-    curl -fsSL -o "$dest" "$url" 2>/dev/null \
-        && log "  Downloaded: $(basename "$dest")" \
-        || warn "  Could not fetch $(basename "$dest") — hard-coded fallback will be used."
-}
-
-HCP_GH="https://github.com/Washington-University/HCPpipelines/raw/master/global/templates/standard_mesh_atlases"
-dl_atlas "$HCP_GH/L.atlasroi.32k_fs_LR.shape.gii" "$ATLAS_DIR/L.atlasroi.32k_fs_LR.shape.gii"
-dl_atlas "$HCP_GH/R.atlasroi.32k_fs_LR.shape.gii" "$ATLAS_DIR/R.atlasroi.32k_fs_LR.shape.gii"
-
-warn "Full MMP1.0 label.gii files require HCP account (db.humanconnectome.org)."
-warn "Place L/R.MMP1.0.32k_fs_LR.label.gii in $ATLAS_DIR for production atlas masking."
-
-# ── 6. TRIBE v2 weights ───────────────────────────────────────────────────────
-log "Attempting TRIBE v2 download from HuggingFace ($HF_TRIBE_REPO)..."
-source "$VENV/bin/activate"
-python3 - <<PYEOF 2>&1 | tail -8 || true
-from huggingface_hub import snapshot_download, list_repo_files
-import sys
+# ── 5. HuggingFace login ──────────────────────────────────────────────────────
+log "Step 5/9 — Authenticating with HuggingFace..."
+python3 - <<PYEOF
+from huggingface_hub import login
+import os
 try:
-    list(list_repo_files("$HF_TRIBE_REPO"))  # will raise if repo not accessible
-    snapshot_download(
-        repo_id="$HF_TRIBE_REPO",
-        local_dir="$SPIKD_DIR/models/tribe_v2",
-        ignore_patterns=["*.msgpack", "flax_model*"],
-    )
-    print("TRIBE v2 weights downloaded.")
-except Exception as exc:
-    print(f"TRIBE v2 not accessible: {exc}")
-    print("System will start in SIMULATION MODE.")
-    print("Place tribe_v2.pt + config.json in: $SPIKD_DIR/models/tribe_v2")
-    sys.exit(0)
+    login(token=os.environ['HF_TOKEN'], add_to_git_credential=False)
+    print("HuggingFace login successful.")
+except Exception as e:
+    print(f"HuggingFace login failed: {e}")
+    exit(1)
 PYEOF
-deactivate
 
-# ── 7. Environment file ───────────────────────────────────────────────────────
-log "Writing .env..."
+# ── 6. TRIBE v2 ───────────────────────────────────────────────────────────────
+log "Step 6/9 — Installing TRIBE v2..."
+if [[ ! -d "/workspace/tribev2" ]]; then
+    git clone https://github.com/facebookresearch/tribev2.git /workspace/tribev2 --quiet
+fi
+cd /workspace/tribev2
+pip install -e . -q
+cd "$SPIKD_DIR"
+
+log "Downloading TRIBE v2 weights (~700MB)..."
+python3 - <<PYEOF
+from huggingface_hub import snapshot_download
+import os
+snapshot_download(
+    repo_id="facebook/tribev2",
+    local_dir="/workspace/tribev2_weights",
+    ignore_patterns=["*.msgpack"],
+)
+print("TRIBE v2 weights ready.")
+PYEOF
+
+log "Downloading Llama 3.2-3B config for TRIBE v2 text encoder..."
+python3 - <<PYEOF
+from huggingface_hub import snapshot_download
+import os
+try:
+    snapshot_download(
+        repo_id="meta-llama/Llama-3.2-3B",
+        ignore_patterns=["*.bin", "*.safetensors", "original/*"],
+    )
+    print("Llama 3.2-3B config ready.")
+except Exception as e:
+    print(f"Warning: {e}")
+    print("Visit https://huggingface.co/meta-llama/Llama-3.2-3B to request access.")
+PYEOF
+
+# ── 7. Atlas files ────────────────────────────────────────────────────────────
+log "Step 7/9 — Downloading atlas files..."
+ATLAS_DIR="$SPIKD_DIR/atlas_data"
+HCP_GH="https://github.com/Washington-University/HCPpipelines/raw/master/global/templates/standard_mesh_atlases"
+curl -fsSL -o "$ATLAS_DIR/L.atlasroi.32k_fs_LR.shape.gii" "$HCP_GH/L.atlasroi.32k_fs_LR.shape.gii" 2>/dev/null || true
+curl -fsSL -o "$ATLAS_DIR/R.atlasroi.32k_fs_LR.shape.gii" "$HCP_GH/R.atlasroi.32k_fs_LR.shape.gii" 2>/dev/null || true
+log "Atlas files ready."
+
+# ── 8. Environment file ───────────────────────────────────────────────────────
+log "Step 8/9 — Writing configuration..."
 ENV_FILE="$SPIKD_DIR/.env"
-if [[ ! -f "$ENV_FILE" ]]; then
-    SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-    cat > "$ENV_FILE" <<ENVEOF
+SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+cat > "$ENV_FILE" <<ENVEOF
 HOST=0.0.0.0
 PORT=$PORT
 SESSION_SECRET=$SECRET
 SPIKD_USERS={"admin":"spikd2024"}
 SESSION_DIR=$SPIKD_DIR/data/sessions
 ATLAS_DIR=$SPIKD_DIR/atlas_data
-TRIBE_MODEL_PATH=$SPIKD_DIR/models/tribe_v2
+TRIBE_MODEL_PATH=/workspace/tribev2_weights
 OLLAMA_HOST=http://localhost:11434
 LLM_MODEL=llama3.2
 VRAM_BUDGET_MB=20000
+HF_TOKEN=$HF_TOKEN
 ENVEOF
-    log ".env created. Default credentials: admin / spikd2024"
-    warn "Change SPIKD_USERS in $ENV_FILE before exposing to the internet."
-else
-    log ".env already exists — skipping."
-fi
+log "Configuration written."
 
-# ── 8. systemd services ───────────────────────────────────────────────────────
-log "Registering systemd services..."
+# ── 9. Start SPIKD ───────────────────────────────────────────────────────────
+log "Step 9/9 — Starting SPIKD..."
+source "$VENV/bin/activate"
+export HF_TOKEN="$HF_TOKEN"
+cd "$SPIKD_DIR"
 
-cat > /etc/systemd/system/ollama.service <<OLEOF
-[Unit]
-Description=Ollama LLM service
-After=network.target
+nohup uvicorn app.main:app \
+    --host 0.0.0.0 \
+    --port "$PORT" \
+    --workers 1 \
+    --log-level info \
+    > "$SPIKD_DIR/logs/spikd.log" 2>&1 &
 
-[Service]
-Type=simple
-User=root
-ExecStart=/usr/local/bin/ollama serve
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-OLEOF
-
-cat > /etc/systemd/system/spikd.service <<SVCEOF
-[Unit]
-Description=SPIKD — Cortical Attention Diagnostic Platform
-After=network.target ollama.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$SPIKD_DIR
-EnvironmentFile=$SPIKD_DIR/.env
-ExecStart=$VENV/bin/uvicorn app.main:app \\
-    --host 0.0.0.0 \\
-    --port $PORT \\
-    --workers 1 \\
-    --log-level info
-Restart=on-failure
-RestartSec=10
-StandardOutput=append:$SPIKD_DIR/logs/spikd.log
-StandardError=append:$SPIKD_DIR/logs/spikd.log
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF
-
-systemctl daemon-reload
-systemctl enable ollama.service
-systemctl restart ollama.service || true
-sleep 3
-systemctl enable spikd.service
-systemctl restart spikd.service || true
-
-# ── 9. Verify ─────────────────────────────────────────────────────────────────
-log "Waiting for SPIKD to start..."
-sleep 7
+sleep 8
 
 HTTP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$PORT/login" 2>/dev/null || echo "000")
 HOST_IP=$(hostname -I | awk '{print $1}')
 
 echo ""
-echo "═══════════════════════════════════════════════════════════"
+echo "═══════════════════════════════════════════════════════"
 if [[ "$HTTP" == "200" ]]; then
-    echo -e "  ${GRN}SPIKD is running — HTTP $HTTP${NC}"
+    echo -e "  ${GRN}SPIKD v2 is live.${NC}"
 else
-    echo -e "  ${YLW}SPIKD starting (HTTP $HTTP) — check logs if it stays at this.${NC}"
+    echo -e "  ${YLW}SPIKD starting up — check logs if it stays down.${NC}"
 fi
 echo ""
-echo "  Dashboard  :  http://$HOST_IP:$PORT"
-echo "  RunPod     :  expose TCP port $PORT in pod settings"
+echo "  URL        :  http://$HOST_IP:$PORT"
+echo "  RunPod     :  open port $PORT in pod HTTP settings"
 echo ""
-echo "  Login      :  admin / spikd2024"
-echo "  Change pw  :  edit SPIKD_USERS in $ENV_FILE then: systemctl restart spikd"
+echo "  Username   :  admin"
+echo "  Password   :  spikd2024"
 echo ""
 echo "  Logs       :  tail -f $SPIKD_DIR/logs/spikd.log"
-echo "  Restart    :  systemctl restart spikd"
-echo "  Stop       :  systemctl stop spikd"
-echo ""
-echo "  Model dir  :  $SPIKD_DIR/models/tribe_v2/"
-echo "  Atlas dir  :  $SPIKD_DIR/atlas_data/"
-echo "═══════════════════════════════════════════════════════════"
+echo "  Restart    :  cd $SPIKD_DIR && source venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"
+echo "═══════════════════════════════════════════════════════"
 echo ""

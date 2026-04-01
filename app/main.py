@@ -13,7 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import settings
-from app.auth import require_login, verify_credentials
+from app.auth import require_login, verify_credentials, RedirectException
 from pipeline.tribe_processor import TribeProcessor
 from pipeline.llm_summary import LLMSummary
 from pipeline.pdf_generator import PDFGenerator
@@ -26,6 +26,11 @@ app.add_middleware(
     secret_key=settings.SESSION_SECRET,
     max_age=86400,
 )
+
+# ── Redirect unauthenticated users to /login ──────────────────
+@app.exception_handler(RedirectException)
+async def redirect_exception_handler(request: Request, exc: RedirectException):
+    return RedirectResponse(url=exc.url, status_code=302)
 
 BASE_DIR = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
@@ -62,12 +67,13 @@ async def login_submit(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
+    next: str = Form("/"),
 ):
     if verify_credentials(username, password):
         request.session["user"] = username
-        return RedirectResponse("/", status_code=302)
+        return RedirectResponse(next, status_code=302)
     return templates.TemplateResponse(
-        "login.html", {"request": request, "error": "Invalid credentials."}
+        "login.html", {"request": request, "error": "Invalid credentials.", "next": next}
     )
 
 

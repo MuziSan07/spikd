@@ -16,35 +16,13 @@ def verify_credentials(username: str, password: str) -> bool:
     return stored == hash_password(password)
 
 
-class require_login:
-    """FastAPI dependency — redirects unauthenticated requests to /login."""
-    def __init__(self, request: Request):
-        self.request = request
-
-    def __await__(self):
-        return self._check().__await__()
-
-    async def _check(self):
-        user = self.request.session.get("user")
-        if not user:
-            raise _LoginRedirect()
-        return user
+class RedirectException(Exception):
+    def __init__(self, url: str):
+        self.url = url
 
 
-class _LoginRedirect(Exception):
-    pass
-
-
-from fastapi import Request
-from fastapi.responses import RedirectResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-
-
-# Simpler dependency approach
 async def require_login(request: Request) -> str:
     user = request.session.get("user")
     if not user:
-        from fastapi import HTTPException
-        # For API endpoints return 401, for page endpoints redirect
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise RedirectException(f"/login?next={request.url.path}")
     return user

@@ -19,6 +19,7 @@
       {% endif %}
 
       <form method="post" action="/login" class="login-form" autocomplete="off">
+        <input type="hidden" name="next" value="{{ next if next else request.query_params.get('next', '/') }}" />
         <div class="field">
           <label for="username">Username</label>
           <input

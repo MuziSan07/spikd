@@ -126,6 +126,14 @@ async def analyze(
         "filename": video.filename,
         "ad_copy": ad_copy,
         "result_path": None,
+        "llm_summary": "",
+        "alignment": "",
+        "alignment_score": "N/A",
+        "peak_engagement_sec": "",
+        "drop_timestamp_sec": "",
+        "duration_sec": "",
+        "fps": "",
+        "n_frames": "",
     }
 
     asyncio.create_task(
@@ -173,14 +181,24 @@ async def run_pipeline(job_id: str, video_path: str, ad_copy: str, user: str):
         update(80, "Generating PDF report...")
 
         # STEP 3 — PDF
-        job_dir    = Path(settings.SESSION_DIR) / job_id
-        pdf_path   = await loop.run_in_executor(
+        job_dir  = Path(settings.SESSION_DIR) / job_id
+        pdf_path = await loop.run_in_executor(
             None,
             pdf_generator.generate,
             job_id, job_dir, brain_result, llm_result, ad_copy, user,
         )
 
-        JOBS[job_id]["result_path"] = str(pdf_path)
+        # ── Store all results back into JOBS for the result page ──
+        JOBS[job_id]["result_path"]         = str(pdf_path)
+        JOBS[job_id]["llm_summary"]         = llm_result.get("summary", "")
+        JOBS[job_id]["alignment"]           = llm_result.get("alignment", "")
+        JOBS[job_id]["alignment_score"]     = llm_result.get("alignment_score", "N/A")
+        JOBS[job_id]["peak_engagement_sec"] = brain_result.get("peak_engagement_sec", "")
+        JOBS[job_id]["drop_timestamp_sec"]  = brain_result.get("drop_timestamp_sec", "")
+        JOBS[job_id]["duration_sec"]        = brain_result.get("duration_sec", "")
+        JOBS[job_id]["fps"]                 = brain_result.get("fps", "")
+        JOBS[job_id]["n_frames"]            = len(brain_result.get("waveform", []))
+
         update(100, "Complete.", "done")
 
     except Exception as exc:

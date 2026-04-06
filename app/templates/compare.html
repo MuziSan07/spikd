@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}SPIKD — Compare{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header page-header-row">
+    <div>
+      <h1 class="page-title">Side-by-Side Comparison</h1>
+      <p class="page-subtitle">Neural attention waveforms compared.</p>
+    </div>
+    <div class="header-actions">
+      <a href="/result/{{ job_a_id }}" class="btn btn-ghost">Full Report A</a>
+      <a href="/result/{{ job_b_id }}" class="btn btn-ghost">Full Report B</a>
+      <a href="/" class="btn btn-primary">New Analysis</a>
+    </div>
+  </div>
+
+  <!-- Waveforms -->
+  <div class="grid-2" style="margin-bottom:1.25rem;">
+    <section class="card">
+      <h2 class="card-title">Video A — {{ job_a.filename }}</h2>
+      <div class="waveform-wrap">
+        <img src="{{ waveform_a }}" alt="Waveform A" class="waveform-img" />
+      </div>
+    </section>
+    <section class="card">
+      <h2 class="card-title">Video B — {{ job_b.filename }}</h2>
+      <div class="waveform-wrap">
+        <img src="{{ waveform_b }}" alt="Waveform B" class="waveform-img" />
+      </div>
+    </section>
+  </div>
+
+  <!-- Metrics comparison -->
+  <section class="card" style="margin-bottom:1.25rem;">
+    <h2 class="card-title">Metrics Comparison</h2>
+    <table style="width:100%; border-collapse:collapse; font-size:0.86rem;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left; padding:0.75rem 0.5rem; color:var(--text-2); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Metric</th>
+          <th style="text-align:left; padding:0.75rem 0.5rem; color:var(--text-2); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Video A</th>
+          <th style="text-align:left; padding:0.75rem 0.5rem; color:var(--text-2); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Video B</th>
+          <th style="text-align:left; padding:0.75rem 0.5rem; color:var(--text-2); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Winner</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:0.75rem 0.5rem; color:var(--text-2);">Peak Engagement</td>
+          <td style="padding:0.75rem 0.5rem; font-weight:600;">{{ job_a.peak_engagement_sec or '—' }}s</td>
+          <td style="padding:0.75rem 0.5rem; font-weight:600;">{{ job_b.peak_engagement_sec or '—' }}s</td>
+          <td style="padding:0.75rem 0.5rem; color:var(--success);">
+            {% if job_a.peak_engagement_sec and job_b.peak_engagement_sec %}
+              {% if job_a.peak_engagement_sec < job_b.peak_engagement_sec %}A (earlier hook){% elif job_b.peak_engagement_sec < job_a.peak_engagement_sec %}B (earlier hook){% else %}Tie{% endif %}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border); background:var(--bg-3);">
+          <td style="padding:0.75rem 0.5rem; color:var(--text-2);">Video Duration</td>
+          <td style="padding:0.75rem 0.5rem;">{{ job_a.duration_sec or '—' }}s</td>
+          <td style="padding:0.75rem 0.5rem;">{{ job_b.duration_sec or '—' }}s</td>
+          <td style="padding:0.75rem 0.5rem;">—</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:0.75rem 0.5rem; color:var(--text-2);">Alignment Score</td>
+          <td style="padding:0.75rem 0.5rem;">
+            {% if job_a.alignment_score and job_a.alignment_score != 'N/A' %}
+            <span class="score-badge score-{{ job_a.alignment_score | lower }}">{{ job_a.alignment_score }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td style="padding:0.75rem 0.5rem;">
+            {% if job_b.alignment_score and job_b.alignment_score != 'N/A' %}
+            <span class="score-badge score-{{ job_b.alignment_score | lower }}">{{ job_b.alignment_score }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td style="padding:0.75rem 0.5rem; color:var(--success);">
+            {% if job_a.alignment_score == 'High' and job_b.alignment_score != 'High' %}A
+            {% elif job_b.alignment_score == 'High' and job_a.alignment_score != 'High' %}B
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Summaries -->
+  <div class="grid-2">
+    <section class="card">
+      <h2 class="card-title">Video A — AI Summary</h2>
+      <p class="body-text">{{ job_a.llm_summary or 'No summary available.' }}</p>
+      {% if job_a.recommendations %}
+      <div style="margin-top:1rem;">
+        <p style="font-size:0.78rem; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Recommendations</p>
+        {% for rec in job_a.recommendations %}
+        <p style="font-size:0.82rem; color:var(--text-2); padding:0.4rem 0; border-bottom:1px solid var(--border);">{{ loop.index }}. {{ rec }}</p>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+    <section class="card">
+      <h2 class="card-title">Video B — AI Summary</h2>
+      <p class="body-text">{{ job_b.llm_summary or 'No summary available.' }}</p>
+      {% if job_b.recommendations %}
+      <div style="margin-top:1rem;">
+        <p style="font-size:0.78rem; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Recommendations</p>
+        {% for rec in job_b.recommendations %}
+        <p style="font-size:0.82rem; color:var(--text-2); padding:0.4rem 0; border-bottom:1px solid var(--border);">{{ loop.index }}. {{ rec }}</p>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+  </div>
+
+</div>
+{% endblock %}

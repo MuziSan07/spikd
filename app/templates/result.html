@@ -7,32 +7,35 @@
   <div class="page-header page-header-row">
     <div>
       <h1 class="page-title">Analysis Report</h1>
-      <p class="page-subtitle">Job <code>{{ job_id[:16] }}</code></p>
+      <p class="page-subtitle">Job <code>{{ job_id[:16] }}</code>{% if job.target_audience %} &nbsp;|&nbsp; Audience: <strong>{{ job.target_audience }}</strong>{% endif %}</p>
     </div>
     <div class="header-actions">
       <a href="/download/{{ job_id }}" class="btn btn-primary">Download PDF</a>
+      <a href="/history" class="btn btn-ghost">History</a>
       <a href="/" class="btn btn-ghost">New Analysis</a>
     </div>
   </div>
 
-  {% if job.simulation_mode %}
-  <div class="alert alert-warn" style="margin-bottom: 1.5rem">
-    Simulation Mode Active — TRIBE v2 model weights were not loaded.
-    Results demonstrate the pipeline structure only.
-    Load real model weights for clinically valid outputs.
-  </div>
-  {% endif %}
-
-  <!-- Waveform -->
-  <section class="card" style="margin-bottom: 1.25rem">
-    <h2 class="card-title">Attention Spike Waveform</h2>
-    <p class="text-muted" style="margin-bottom: 1rem">
-      Normalised DAN + Primary Visual Cortex activation (Glasser MMP1.0).
-      No 3D rendering. Headless atlas masking applied.
-    </p>
+  <!-- Waveform + Peak Frame -->
+  <section class="card" style="margin-bottom:1.25rem;">
+    <h2 class="card-title">Attention Waveform</h2>
+    <p class="text-muted" style="margin-bottom:1rem;">Normalised DAN + Primary Visual Cortex activation. Peak frame captured automatically.</p>
+    {% if peak_frame_img %}
+    <div style="display:grid; grid-template-columns: 1fr auto; gap:1.25rem; align-items:start;">
+      <div class="waveform-wrap">
+        <img src="{{ waveform_img }}" alt="Attention waveform" class="waveform-img" />
+      </div>
+      <div style="text-align:center;">
+        <p style="font-size:0.75rem; color:var(--text-3); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Peak Frame</p>
+        <img src="{{ peak_frame_img }}" alt="Peak frame" style="width:180px; height:101px; object-fit:cover; border-radius:var(--radius); border:1px solid var(--border);" />
+        <p style="font-size:0.72rem; color:var(--text-3); margin-top:0.4rem;">@ {{ job.peak_engagement_sec }}s</p>
+      </div>
+    </div>
+    {% else %}
     <div class="waveform-wrap">
       <img src="{{ waveform_img }}" alt="Attention waveform" class="waveform-img" />
     </div>
+    {% endif %}
   </section>
 
   <div class="grid-3">
@@ -57,9 +60,8 @@
     <section class="card" style="grid-column: span 2">
       <h2 class="card-title">Neural Engagement Analysis</h2>
       <p class="body-text">{{ job.llm_summary | default('No summary available.') }}</p>
-
       {% if job.key_findings %}
-      <ul class="findings-list">
+      <ul class="findings-list" style="margin-top:1rem;">
         {% for f in job.key_findings %}
         <li>{{ f }}</li>
         {% endfor %}
@@ -69,20 +71,41 @@
 
   </div>
 
+  <!-- 3 Recommendations -->
+  {% if job.recommendations %}
+  <section class="card" style="margin-top:1.25rem;">
+    <h2 class="card-title">3 Recommended Edits</h2>
+    <p class="text-muted" style="margin-bottom:1rem; font-size:0.84rem;">Specific, actionable changes to improve attention performance.</p>
+    <div style="display:flex; flex-direction:column; gap:0.75rem;">
+      {% for rec in job.recommendations %}
+      <div style="display:flex; gap:1rem; align-items:flex-start; padding:0.875rem; background:var(--bg-3); border-radius:var(--radius); border:1px solid var(--border);">
+        <span style="font-size:1.1rem; font-weight:700; color:var(--accent); min-width:1.5rem;">{{ loop.index }}</span>
+        <p style="font-size:0.88rem; color:var(--text); line-height:1.5;">{{ rec }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- Ad Copy Alignment -->
   {% if job.ad_copy %}
-  <section class="card" style="margin-top: 1.25rem">
+  <section class="card" style="margin-top:1.25rem;">
     <h2 class="card-title">Ad Copy Alignment Analysis</h2>
     <div class="alignment-grid">
       <div>
         <p class="label-text">Ad Copy Submitted</p>
         <blockquote class="ad-quote">{{ job.ad_copy }}</blockquote>
+        {% if job.target_audience %}
+        <p class="label-text" style="margin-top:1rem;">Target Audience</p>
+        <p class="body-text">{{ job.target_audience }}</p>
+        {% endif %}
       </div>
       <div>
         <p class="label-text">Alignment Score</p>
         <div class="score-badge score-{{ job.alignment_score | lower | default('na') }}">
           {{ job.alignment_score | default('N/A') }}
         </div>
-        <p class="body-text" style="margin-top: 1rem">
+        <p class="body-text" style="margin-top:1rem;">
           {{ job.alignment | default('No alignment analysis available.') }}
         </p>
       </div>

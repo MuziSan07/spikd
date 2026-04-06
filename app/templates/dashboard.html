@@ -38,7 +38,7 @@
           id="ad-copy"
           name="ad_copy"
           rows="5"
-          placeholder="Paste your ad copy or headline here. Llama 3.2 will compare it against the brain waveform and score alignment."
+          placeholder="Paste your ad copy or headline here. The AI will compare it against the brain waveform and score alignment."
         ></textarea>
         <p class="field-hint">Leave blank for waveform-only analysis.</p>
       </div>
@@ -50,37 +50,78 @@
       <div id="upload-error" class="alert alert-error hidden"></div>
     </section>
 
-    <!-- Recent Jobs Panel -->
-    <section class="card">
-      <h2 class="card-title">Recent Jobs</h2>
+    <!-- Right panel -->
+    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
 
-      {% set jobs = recent_jobs | list %}
-      {% if jobs %}
-      <div class="job-list">
-        {% for job in jobs %}
-        <div class="job-row">
-          <div class="job-meta">
-            <span class="job-file">{{ job.filename or 'Unknown' }}</span>
-            <span class="job-id">{{ job.job_id[:8] }}</span>
+      <!-- Recent Jobs -->
+      <section class="card">
+        <h2 class="card-title">Recent Jobs</h2>
+
+        {% set jobs = recent_jobs | list %}
+        {% if jobs %}
+        <div class="job-list">
+          {% for job in jobs %}
+          <div class="job-row">
+            <div class="job-meta">
+              <span class="job-file">{{ job.filename or 'Unknown' }}</span>
+              <span class="job-id">{{ job.job_id[:8] }}</span>
+            </div>
+            <div class="job-right">
+              <span class="badge badge-{{ job.status }}">{{ job.status }}</span>
+              {% if job.status == 'done' %}
+              <a href="/result/{{ job.job_id }}" class="btn btn-sm">View</a>
+              {% elif job.status == 'running' or job.status == 'queued' %}
+              <a href="/progress/{{ job.job_id }}" class="btn btn-sm">Track</a>
+              {% endif %}
+            </div>
           </div>
-          <div class="job-right">
-            <span class="badge badge-{{ job.status }}">{{ job.status }}</span>
-            {% if job.status == 'done' %}
-            <a href="/result/{{ job.job_id }}" class="btn btn-sm">View</a>
-            {% elif job.status == 'running' or job.status == 'queued' %}
-            <a href="/progress/{{ job.job_id }}" class="btn btn-sm">Track</a>
-            {% endif %}
-          </div>
+          {% endfor %}
         </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <div class="empty-state">
-        <p>No analyses run yet. Upload a video to begin.</p>
-      </div>
-      {% endif %}
-    </section>
+        {% else %}
+        <div class="empty-state">
+          <p>No analyses run yet. Upload a video to begin.</p>
+        </div>
+        {% endif %}
+      </section>
 
+      <!-- Agency Logo -->
+      <section class="card">
+        <h2 class="card-title">Agency Logo</h2>
+        <p class="text-muted" style="margin-bottom: 1rem; font-size: 0.84rem;">
+          Upload your agency or client logo. It will appear on every PDF report automatically.
+        </p>
+
+        {% if has_logo %}
+        <div style="margin-bottom: 1rem; padding: 0.75rem; background: var(--bg-3); border-radius: var(--radius); border: 1px solid var(--border);">
+          <img src="/agency-logo" alt="Agency Logo" style="max-height: 48px; max-width: 100%; object-fit: contain; display: block;" />
+        </div>
+        <p style="font-size: 0.78rem; color: var(--success); margin-bottom: 1rem;">✓ Logo active — appearing on all reports</p>
+        {% else %}
+        <div style="margin-bottom: 1rem; padding: 0.75rem; background: var(--bg-3); border-radius: var(--radius); border: 1px dashed var(--border-2); text-align: center;">
+          <p style="font-size: 0.82rem; color: var(--text-3);">No logo uploaded yet</p>
+        </div>
+        {% endif %}
+
+        <div class="field">
+          <label for="logo-input">{{ 'Replace Logo' if has_logo else 'Choose Logo File' }}</label>
+          <input
+            id="logo-input"
+            type="file"
+            accept="image/png,image/jpeg,image/jpg"
+            onchange="handleLogoSelect(this)"
+            style="font-size: 0.84rem; color: var(--text-2);"
+          />
+          <p class="field-hint">PNG or JPG recommended. Max 5MB. Transparent background works best on dark reports.</p>
+        </div>
+
+        <button id="logo-btn" class="btn btn-primary" onclick="uploadLogo()" style="margin-top: 0.75rem;" disabled>
+          Upload Logo
+        </button>
+        <div id="logo-success" class="alert alert-success hidden" style="margin-top: 0.75rem;"></div>
+        <div id="logo-error" class="alert alert-error hidden" style="margin-top: 0.75rem;"></div>
+      </section>
+
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -88,7 +129,9 @@
 {% block scripts %}
 <script>
 let selectedFile = null;
+let selectedLogo = null;
 
+// ── Video upload ──────────────────────────────────────────────
 function handleDrop(e) {
   e.preventDefault();
   document.getElementById('drop-zone').classList.remove('drag-over');
@@ -118,11 +161,10 @@ function clearFile() {
 
 async function submitAnalysis() {
   if (!selectedFile) return;
-
   const btn = document.getElementById('submit-btn');
   const errBox = document.getElementById('upload-error');
   btn.disabled = true;
-    btn.textContent = 'Uploading...';
+  btn.textContent = 'Uploading...';
   errBox.classList.add('hidden');
 
   const fd = new FormData();
@@ -142,6 +184,47 @@ async function submitAnalysis() {
     errBox.classList.remove('hidden');
     btn.disabled = false;
     btn.textContent = 'Run Audit';
+  }
+}
+
+// ── Logo upload ───────────────────────────────────────────────
+function handleLogoSelect(input) {
+  if (input.files[0]) {
+    selectedLogo = input.files[0];
+    document.getElementById('logo-btn').disabled = false;
+  }
+}
+
+async function uploadLogo() {
+  if (!selectedLogo) return;
+  const btn     = document.getElementById('logo-btn');
+  const success = document.getElementById('logo-success');
+  const errBox  = document.getElementById('logo-error');
+
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+  success.classList.add('hidden');
+  errBox.classList.add('hidden');
+
+  const fd = new FormData();
+  fd.append('logo', selectedLogo);
+
+  try {
+    const res = await fetch('/upload-logo', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const d = await res.json();
+      throw new Error(d.detail || 'Upload failed.');
+    }
+    success.textContent = '✓ Logo uploaded! It will appear on all future PDF reports.';
+    success.classList.remove('hidden');
+    btn.textContent = 'Upload Logo';
+    // Reload page after 1.5s to show the preview
+    setTimeout(() => window.location.reload(), 1500);
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Upload Logo';
   }
 }
 </script>

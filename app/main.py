@@ -2,7 +2,7 @@ import os
 import sys
 import uuid
 import asyncio
-import json
+import shutil
 from pathlib import Path
 
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Depends
@@ -32,7 +32,9 @@ app.add_middleware(
 async def redirect_exception_handler(request: Request, exc: RedirectException):
     return RedirectResponse(url=exc.url, status_code=302)
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR  = Path(__file__).parent
+LOGO_PATH = Path("/workspace/spikd/app/static/agency_logo.png")  # persistent logo
+
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
@@ -41,7 +43,7 @@ tribe_processor: TribeProcessor = None
 llm_summary: LLMSummary = None
 pdf_generator: PDFGenerator = None
 
-# In-memory job tracker  {job_id: {status, progress, message, result_path}}
+# In-memory job tracker
 JOBS: dict = {}
 
 
@@ -91,10 +93,44 @@ async def dashboard(request: Request, user: str = Depends(require_login)):
         for jid, meta in JOBS.items()
         if meta.get("user") == user
     ][-10:]
+    has_logo = LOGO_PATH.exists()
     return templates.TemplateResponse(
         "dashboard.html",
-        {"request": request, "user": user, "recent_jobs": reversed(recent_jobs)},
+        {
+            "request": request,
+            "user": user,
+            "recent_jobs": reversed(recent_jobs),
+            "has_logo": has_logo,
+        },
     )
+
+
+# ── Logo upload ───────────────────────────────────────────────
+@app.post("/upload-logo")
+async def upload_logo(
+    request: Request,
+    logo: UploadFile = File(...),
+    user: str = Depends(require_login),
+):
+    allowed = {"image/png", "image/jpeg", "image/jpg", "image/svg+xml"}
+    if logo.content_type not in allowed:
+        raise HTTPException(status_code=400, detail="Logo must be PNG, JPG, or SVG.")
+
+    # Always save as PNG filename (works for png/jpg)
+    LOGO_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOGO_PATH, "wb") as f:
+        content = await logo.read()
+        f.write(content)
+
+    return JSONResponse({"success": True, "message": "Logo uploaded successfully!"})
+
+
+# ── Logo serve ────────────────────────────────────────────────
+@app.get("/agency-logo")
+async def serve_logo(user: str = Depends(require_login)):
+    if LOGO_PATH.exists():
+        return FileResponse(str(LOGO_PATH))
+    raise HTTPException(status_code=404, detail="No logo uploaded.")
 
 
 # ── Upload & process ──────────────────────────────────────────
@@ -105,12 +141,11 @@ async def analyze(
     ad_copy: str = Form(""),
     user: str = Depends(require_login),
 ):
-    # Validate file type
     if not video.content_type.startswith("video/"):
         raise HTTPException(status_code=400, detail="Uploaded file must be a video.")
 
-    job_id   = str(uuid.uuid4())
-    job_dir  = Path(settings.SESSION_DIR) / job_id
+    job_id  = str(uuid.uuid4())
+    job_dir = Path(settings.SESSION_DIR) / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
     video_path = job_dir / video.filename
@@ -134,6 +169,7 @@ async def analyze(
         "duration_sec": "",
         "fps": "",
         "n_frames": "",
+        "key_findings": [],
     }
 
     asyncio.create_task(
@@ -157,14 +193,6 @@ async def run_pipeline(job_id: str, video_path: str, ad_copy: str, user: str):
         brain_result = await loop.run_in_executor(
             None, tribe_processor.process, video_path
         )
-        # brain_result = {
-        #   "waveform": np.array [T],
-        #   "peak_engagement_sec": float,
-        #   "drop_timestamp_sec": float,
-        #   "fps": float,
-        #   "duration_sec": float,
-        #   "waveform_png_path": str,
-        # }
 
         update(55, "Waveform extracted. Running Llama 3.2 alignment analysis...")
 
@@ -172,27 +200,24 @@ async def run_pipeline(job_id: str, video_path: str, ad_copy: str, user: str):
         llm_result = await loop.run_in_executor(
             None, llm_summary.generate, brain_result, ad_copy
         )
-        # llm_result = {
-        #   "summary": str,
-        #   "alignment": str,   # only if ad_copy provided
-        #   "alignment_score": str,
-        # }
 
         update(80, "Generating PDF report...")
 
-        # STEP 3 — PDF
+        # STEP 3 — PDF (pass logo path)
         job_dir  = Path(settings.SESSION_DIR) / job_id
+        logo_path = str(LOGO_PATH) if LOGO_PATH.exists() else None
         pdf_path = await loop.run_in_executor(
             None,
             pdf_generator.generate,
-            job_id, job_dir, brain_result, llm_result, ad_copy, user,
+            job_id, job_dir, brain_result, llm_result, ad_copy, user, logo_path,
         )
 
-        # ── Store all results back into JOBS for the result page ──
+        # ── Store all results back into JOBS ──
         JOBS[job_id]["result_path"]         = str(pdf_path)
         JOBS[job_id]["llm_summary"]         = llm_result.get("summary", "")
         JOBS[job_id]["alignment"]           = llm_result.get("alignment", "")
         JOBS[job_id]["alignment_score"]     = llm_result.get("alignment_score", "N/A")
+        JOBS[job_id]["key_findings"]        = llm_result.get("key_findings", [])
         JOBS[job_id]["peak_engagement_sec"] = brain_result.get("peak_engagement_sec", "")
         JOBS[job_id]["drop_timestamp_sec"]  = brain_result.get("drop_timestamp_sec", "")
         JOBS[job_id]["duration_sec"]        = brain_result.get("duration_sec", "")
@@ -263,7 +288,7 @@ async def download_pdf(job_id: str, user: str = Depends(require_login)):
     )
 
 
-# ── Static session assets (waveform PNGs) ─────────────────────
+# ── Static session assets ─────────────────────────────────────
 @app.get("/sessions/{job_id}/{filename}")
 async def session_asset(job_id: str, filename: str, user: str = Depends(require_login)):
     job = JOBS.get(job_id)

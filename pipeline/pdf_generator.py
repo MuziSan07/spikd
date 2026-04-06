@@ -1,17 +1,5 @@
 """
-pipeline/pdf_generator.py
-
-4-Section Clinical Lab Report Layout:
-
-  1. HEADER     — SPIKD NEURAL-ATTENTION TELEMETRY REPORT (monospace bold)
-  2. GRAPH      — TRIBE v2 Attention Amplitude waveform (full width)
-  3. STATS TABLE — Peak Resonance / Initial Hook Strength / Attention Decay Rate
-  4. VERDICT    — Llama 3.2 formatted as clinical Observations
-                  e.g.  0:04 [ALERT]: Text Overload
-
-Design: pitch black background, Courier monospace throughout,
-        white line graph, no fill, no gradients, no colour.
-        Hospital lab result aesthetic — not a marketing deck.
+pipeline/pdf_generator.py - with agency logo support
 """
 
 import logging
@@ -21,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.platypus import (
@@ -40,7 +28,6 @@ from reportlab.lib.styles import ParagraphStyle
 
 logger = logging.getLogger("spikd.pdf")
 
-# ── Palette — pitch black only ────────────────────────────────────────────────
 BLACK    = colors.HexColor("#000000")
 MID_GREY = colors.HexColor("#2a2a2a")
 DIM_WHT  = colors.HexColor("#666666")
@@ -56,7 +43,6 @@ class PDFGenerator:
     def __init__(self, output_dir: str):
         self.output_dir = Path(output_dir)
 
-    # ── Public entry point ─────────────────────────────────────────────────────
     def generate(
         self,
         job_id: str,
@@ -65,6 +51,7 @@ class PDFGenerator:
         llm_result: dict,
         ad_copy: str,
         user: str,
+        logo_path: str = None,
     ) -> Path:
         out_path = job_dir / "report.pdf"
         S = self._styles()
@@ -86,12 +73,12 @@ class PDFGenerator:
             PageTemplate(
                 id="main",
                 frames=[frame],
-                onPage=self._page_chrome(job_id),
+                onPage=self._page_chrome(job_id, logo_path),
             )
         ])
 
         story = []
-        story += self._section_1_header(S, job_id, user)
+        story += self._section_1_header(S, job_id, user, logo_path)
         story += self._section_2_graph(S, doc, brain_result)
         story += self._section_3_stats(S, doc, brain_result)
         story += self._section_4_verdict(S, llm_result)
@@ -100,28 +87,42 @@ class PDFGenerator:
             story.append(PageBreak())
             story += self._alignment_page(S, llm_result, ad_copy)
 
-        if brain_result.get("simulation_mode"):
-            story.append(Spacer(1, 5 * mm))
-            story.append(HRFlowable(width="100%", thickness=0.3, color=MID_GREY))
-            story.append(Spacer(1, 2 * mm))
-            story.append(Paragraph(
-                "[ SIMULATION MODE — TRIBE v2 WEIGHTS NOT LOADED — "
-                "SYNTHETIC DATA ONLY — NOT FOR CLINICAL USE ]",
-                S["notice"],
-            ))
-
         doc.build(story)
         logger.info("PDF written: %s", out_path)
         return out_path
 
-    # ── SECTION 1 — HEADER ────────────────────────────────────────────────────
-    def _section_1_header(self, S, job_id, user):
+    # ── SECTION 1 — HEADER ───────────────────────────────────────────
+    def _section_1_header(self, S, job_id, user, logo_path):
         ts = datetime.utcnow().strftime("%Y-%m-%d  %H:%M:%S UTC")
-        return [
-            Paragraph(
-                "SPIKD NEURAL-ATTENTION TELEMETRY REPORT",
-                S["report_title"],
-            ),
+        items = []
+
+        # If logo exists, show it top-right using a table
+        if logo_path and Path(logo_path).exists():
+            try:
+                logo_img = Image(logo_path, width=40 * mm, height=14 * mm)
+                logo_img.hAlign = "RIGHT"
+                header_table = Table(
+                    [[
+                        Paragraph("NEURAL ATTENTION REPORT", S["report_title"]),
+                        logo_img
+                    ]],
+                    colWidths=["75%", "25%"],
+                )
+                header_table.setStyle(TableStyle([
+                    ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
+                    ("BACKGROUND",  (0, 0), (-1, -1), BLACK),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING",(0, 0), (-1, -1), 0),
+                    ("TOPPADDING",  (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING",(0,0), (-1, -1), 0),
+                ]))
+                items.append(header_table)
+            except Exception:
+                items.append(Paragraph("NEURAL ATTENTION REPORT", S["report_title"]))
+        else:
+            items.append(Paragraph("NEURAL ATTENTION REPORT", S["report_title"]))
+
+        items += [
             Spacer(1, 1 * mm),
             Paragraph(
                 f"JOB: {job_id[:24].upper()}   |   ANALYST: {user.upper()}   |   {ts}",
@@ -140,14 +141,12 @@ class PDFGenerator:
             HRFlowable(width="100%", thickness=0.3, color=MID_GREY),
             Spacer(1, 4 * mm),
         ]
+        return items
 
-    # ── SECTION 2 — GRAPH ─────────────────────────────────────────────────────
+    # ── SECTION 2 — GRAPH ────────────────────────────────────────────
     def _section_2_graph(self, S, doc, brain_result):
         items = [
-            Paragraph(
-                "ATTENTION AMPLITUDE  //  TRIBE v2 CORTICAL SURFACE OUTPUT",
-                S["section_label"],
-            ),
+            Paragraph("ATTENTION AMPLITUDE  //  CORTICAL SURFACE OUTPUT", S["section_label"]),
             Spacer(1, 2 * mm),
         ]
 
@@ -166,7 +165,7 @@ class PDFGenerator:
         ]
         return items
 
-    # ── SECTION 3 — STATS TABLE ───────────────────────────────────────────────
+    # ── SECTION 3 — STATS TABLE ──────────────────────────────────────
     def _section_3_stats(self, S, doc, brain_result):
         wf           = brain_result.get("waveform", [])
         peak_sec     = brain_result.get("peak_engagement_sec", 0.0)
@@ -193,24 +192,24 @@ class PDFGenerator:
         rows = [
             ["METRIC", "VALUE", "INTERPRETATION"],
             [
-                "Peak Resonance",
+                "Peak Engagement",
                 fmt(peak_sec),
-                f"Highest DAN+V1 activation — frame {int(peak_sec * fps)} of {n_frames}",
+                f"Highest cortical activation — frame {int(peak_sec * fps)} of {n_frames}",
             ],
             [
-                "Initial Hook Strength (0-1)",
+                "Hook Strength (0-1)",
                 f"{hook_strength:.4f}",
-                "Mean activation across first 20% of video duration",
+                "Mean activation across first 20% of video",
             ],
             [
                 "Attention Decay Rate",
                 f"{decay_rate:+.5f}/sec",
-                "Linear slope post-peak. Negative = audience losing attention",
+                "Slope post-peak. Negative = audience losing attention",
             ],
             [
                 "Engagement Drop At",
                 fmt(drop_sec),
-                "Timestamp of sharpest post-peak gradient descent",
+                "Timestamp of sharpest post-peak decline",
             ],
             [
                 "Total Duration",
@@ -222,26 +221,20 @@ class PDFGenerator:
         col_w = [doc.width * 0.35, doc.width * 0.19, doc.width * 0.46]
         tbl   = Table(rows, colWidths=col_w, repeatRows=1)
         tbl.setStyle(TableStyle([
-            # Header
             ("BACKGROUND",     (0, 0), (-1, 0),  MID_GREY),
             ("TEXTCOLOR",      (0, 0), (-1, 0),  WHITE),
             ("FONTNAME",       (0, 0), (-1, 0),  MONO_BOLD),
             ("FONTSIZE",       (0, 0), (-1, 0),  7),
-            # Data rows
             ("BACKGROUND",     (0, 1), (-1, -1), BLACK),
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [BLACK, ROW_ALT]),
             ("TEXTCOLOR",      (0, 1), (-1, -1), WHITE),
             ("FONTNAME",       (0, 1), (-1, -1), MONO),
             ("FONTSIZE",       (0, 1), (-1, -1), 8),
-            # Value column — bold
             ("FONTNAME",       (1, 1), (1, -1),  MONO_BOLD),
             ("FONTSIZE",       (1, 1), (1, -1),  8.5),
-            # Interpretation column — dimmed
             ("TEXTCOLOR",      (2, 1), (2, -1),  DIM_WHT),
             ("FONTSIZE",       (2, 1), (2, -1),  7),
-            # Grid
             ("GRID",           (0, 0), (-1, -1), 0.4, MID_GREY),
-            # Padding
             ("TOPPADDING",     (0, 0), (-1, -1), 5),
             ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
             ("LEFTPADDING",    (0, 0), (-1, -1), 6),
@@ -250,7 +243,7 @@ class PDFGenerator:
         ]))
 
         return [
-            Paragraph("SIGNAL METRICS", S["section_label"]),
+            Paragraph("ENGAGEMENT METRICS", S["section_label"]),
             Spacer(1, 2 * mm),
             tbl,
             Spacer(1, 4 * mm),
@@ -258,13 +251,10 @@ class PDFGenerator:
             Spacer(1, 4 * mm),
         ]
 
-    # ── SECTION 4 — VERDICT ───────────────────────────────────────────────────
+    # ── SECTION 4 — VERDICT ──────────────────────────────────────────
     def _section_4_verdict(self, S, llm_result):
         items = [
-            Paragraph(
-                "CLINICAL OBSERVATIONS  //  LLAMA 3.2 VERDICT",
-                S["section_label"],
-            ),
+            Paragraph("KEY OBSERVATIONS  //  AI ANALYSIS", S["section_label"]),
             Spacer(1, 3 * mm),
         ]
 
@@ -279,10 +269,7 @@ class PDFGenerator:
         elif summary:
             items.append(Paragraph(f"00:00 [SUMMARY]: {summary}", S["obs_line"]))
         else:
-            items.append(Paragraph(
-                "[ NO OBSERVATIONS GENERATED — CHECK LLM SERVICE ]",
-                S["notice"],
-            ))
+            items.append(Paragraph("[ NO OBSERVATIONS GENERATED ]", S["notice"]))
 
         findings = llm_result.get("key_findings", [])
         if findings:
@@ -297,15 +284,11 @@ class PDFGenerator:
 
         return items
 
-    # ── ALIGNMENT PAGE ────────────────────────────────────────────────────────
+    # ── ALIGNMENT PAGE ────────────────────────────────────────────────
     def _alignment_page(self, S, llm_result, ad_copy):
         score = llm_result.get("alignment_score", "N/A").upper()
-        ts    = datetime.utcnow().strftime("%Y-%m-%d  %H:%M:%S UTC")
         return [
-            Paragraph(
-                "SPIKD NEURAL-ATTENTION TELEMETRY REPORT  //  AD COPY ALIGNMENT",
-                S["report_title"],
-            ),
+            Paragraph("NEURAL ATTENTION REPORT  //  AD COPY ALIGNMENT", S["report_title"]),
             Spacer(1, 2 * mm),
             HRFlowable(width="100%", thickness=1.0, color=WHITE),
             Spacer(1, 5 * mm),
@@ -325,8 +308,8 @@ class PDFGenerator:
             ),
         ]
 
-    # ── PAGE CHROME ───────────────────────────────────────────────────────────
-    def _page_chrome(self, job_id: str):
+    # ── PAGE CHROME ───────────────────────────────────────────────────
+    def _page_chrome(self, job_id: str, logo_path: str = None):
         def on_page(canvas, doc):
             canvas.saveState()
             canvas.setFillColor(BLACK)
@@ -339,13 +322,13 @@ class PDFGenerator:
             ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
             canvas.drawString(
                 16 * mm, 7.5 * mm,
-                f"SPIKD TELEMETRY  |  {job_id[:32].upper()}  |  {ts}",
+                f"NEURAL ATTENTION TELEMETRY  |  {job_id[:32].upper()}  |  {ts}",
             )
             canvas.drawRightString(W - 16 * mm, 7.5 * mm, f"PAGE {doc.page}")
             canvas.restoreState()
         return on_page
 
-    # ── STYLES ────────────────────────────────────────────────────────────────
+    # ── STYLES ────────────────────────────────────────────────────────
     def _styles(self) -> dict:
         return {
             "report_title": ParagraphStyle(

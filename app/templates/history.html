@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}SPIKD — Audit History{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header page-header-row">
+    <div>
+      <h1 class="page-title">Audit History</h1>
+      <p class="page-subtitle">All analyses run on this session.</p>
+    </div>
+    <a href="/" class="btn btn-primary">New Analysis</a>
+  </div>
+
+  <section class="card">
+    {% if all_jobs %}
+    <table style="width:100%; border-collapse:collapse; font-size:0.86rem;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left; padding:0.75rem 0.5rem; color:var(--text-2); font-weight:600; text-transform:uppercase; font-size:0.75rem; letter-spacing:0.05em;">Job ID</th>
+          <th style="text-align:left; padding:0.75rem 0.5rem; color:var(--text-2); font-weight:600; text-transform:uppercase; font-size:0.75rem; letter-spacing:0.05em;">File</th>
+          <th style="text-align:left; padding:0.75rem 0.5rem; color:var(--text-2); font-weight:600; text-transform:uppercase; font-size:0.75rem; letter-spacing:0.05em;">Audience</th>
+          <th style="text-align:left; padding:0.75rem 0.5rem; color:var(--text-2); font-weight:600; text-transform:uppercase; font-size:0.75rem; letter-spacing:0.05em;">Peak</th>
+          <th style="text-align:left; padding:0.75rem 0.5rem; color:var(--text-2); font-weight:600; text-transform:uppercase; font-size:0.75rem; letter-spacing:0.05em;">Alignment</th>
+          <th style="text-align:left; padding:0.75rem 0.5rem; color:var(--text-2); font-weight:600; text-transform:uppercase; font-size:0.75rem; letter-spacing:0.05em;">Status</th>
+          <th style="text-align:left; padding:0.75rem 0.5rem;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in all_jobs %}
+        <tr style="border-bottom:1px solid var(--border); {% if loop.index is even %}background:var(--bg-3);{% endif %}">
+          <td style="padding:0.75rem 0.5rem;"><code style="font-size:0.78rem;">{{ job.job_id[:8] }}</code></td>
+          <td style="padding:0.75rem 0.5rem; color:var(--text);">{{ job.filename or '—' }}</td>
+          <td style="padding:0.75rem 0.5rem; color:var(--text-2);">{{ job.target_audience or '—' }}</td>
+          <td style="padding:0.75rem 0.5rem; color:var(--text-2);">
+            {% if job.peak_engagement_sec %}{{ job.peak_engagement_sec }}s{% else %}—{% endif %}
+          </td>
+          <td style="padding:0.75rem 0.5rem;">
+            {% if job.alignment_score and job.alignment_score != 'N/A' %}
+            <span class="score-badge score-{{ job.alignment_score | lower }}" style="font-size:0.72rem; padding:0.2rem 0.5rem;">
+              {{ job.alignment_score }}
+            </span>
+            {% else %}—{% endif %}
+          </td>
+          <td style="padding:0.75rem 0.5rem;">
+            <span class="badge badge-{{ job.status }}">{{ job.status }}</span>
+          </td>
+          <td style="padding:0.75rem 0.5rem; text-align:right;">
+            {% if job.status == 'done' %}
+            <a href="/result/{{ job.job_id }}" class="btn btn-sm">View</a>
+            <a href="/download/{{ job.job_id }}" class="btn btn-sm" style="margin-left:0.25rem;">PDF</a>
+            {% elif job.status == 'running' or job.status == 'queued' %}
+            <a href="/progress/{{ job.job_id }}" class="btn btn-sm">Track</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+      <p>No audits run yet. <a href="/">Upload a video to begin.</a></p>
+    </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

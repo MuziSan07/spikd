@@ -5,123 +5,130 @@
 <div class="page">
   <div class="page-header">
     <h1 class="page-title">Analysis Dashboard</h1>
-    <p class="page-subtitle">Upload a video to generate a cortical attention report.</p>
+    <p class="page-subtitle">Upload a video to generate a neural attention report.</p>
   </div>
 
-  <div class="grid-2">
+  <!-- Tab Nav -->
+  <div style="display:flex; gap:0.5rem; margin-bottom:1.5rem;">
+    <button class="btn btn-primary" onclick="showTab('single')" id="tab-single">Single Video</button>
+    <button class="btn btn-ghost" onclick="showTab('compare')" id="tab-compare">Compare Two Videos</button>
+    <a href="/history" class="btn btn-ghost" style="margin-left:auto;">Audit History</a>
+  </div>
 
-    <!-- Upload Panel -->
-    <section class="card upload-card">
-      <h2 class="card-title">New Analysis</h2>
+  <!-- Single Video Tab -->
+  <div id="panel-single">
+    <div class="grid-2">
+      <section class="card upload-card">
+        <h2 class="card-title">New Analysis</h2>
 
-      <div
-        id="drop-zone"
-        class="drop-zone"
-        ondragover="event.preventDefault(); this.classList.add('drag-over')"
-        ondragleave="this.classList.remove('drag-over')"
-        ondrop="handleDrop(event)"
-      >
-        <div class="drop-icon">&#9634;</div>
-        <p class="drop-label">Drag video here or <label for="video-input" class="drop-browse">browse</label></p>
-        <p class="drop-hint">MP4 / MOV / AVI &nbsp;|&nbsp; 1080p &nbsp;|&nbsp; 15–60 seconds</p>
-        <input id="video-input" type="file" accept="video/*" style="display:none" onchange="handleFileSelect(this)" />
-      </div>
-
-      <div id="file-info" class="file-info hidden">
-        <span id="file-name" class="file-name"></span>
-        <button class="btn-icon" onclick="clearFile()" title="Remove">&#10005;</button>
-      </div>
-
-      <div class="field" style="margin-top: 1.25rem">
-        <label for="ad-copy">Ad Script / Headline <span class="label-optional">(optional)</span></label>
-        <textarea
-          id="ad-copy"
-          name="ad_copy"
-          rows="5"
-          placeholder="Paste your ad copy or headline here. The AI will compare it against the brain waveform and score alignment."
-        ></textarea>
-        <p class="field-hint">Leave blank for waveform-only analysis.</p>
-      </div>
-
-      <button id="submit-btn" class="btn btn-primary btn-full" onclick="submitAnalysis()" disabled>
-        Run Audit
-      </button>
-
-      <div id="upload-error" class="alert alert-error hidden"></div>
-    </section>
-
-    <!-- Right panel -->
-    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-
-      <!-- Recent Jobs -->
-      <section class="card">
-        <h2 class="card-title">Recent Jobs</h2>
-
-        {% set jobs = recent_jobs | list %}
-        {% if jobs %}
-        <div class="job-list">
-          {% for job in jobs %}
-          <div class="job-row">
-            <div class="job-meta">
-              <span class="job-file">{{ job.filename or 'Unknown' }}</span>
-              <span class="job-id">{{ job.job_id[:8] }}</span>
-            </div>
-            <div class="job-right">
-              <span class="badge badge-{{ job.status }}">{{ job.status }}</span>
-              {% if job.status == 'done' %}
-              <a href="/result/{{ job.job_id }}" class="btn btn-sm">View</a>
-              {% elif job.status == 'running' or job.status == 'queued' %}
-              <a href="/progress/{{ job.job_id }}" class="btn btn-sm">Track</a>
-              {% endif %}
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state">
-          <p>No analyses run yet. Upload a video to begin.</p>
-        </div>
-        {% endif %}
-      </section>
-
-      <!-- Agency Logo -->
-      <section class="card">
-        <h2 class="card-title">Agency Logo</h2>
-        <p class="text-muted" style="margin-bottom: 1rem; font-size: 0.84rem;">
-          Upload your agency or client logo. It will appear on every PDF report automatically.
-        </p>
-
-        {% if has_logo %}
-        <div style="margin-bottom: 1rem; padding: 0.75rem; background: var(--bg-3); border-radius: var(--radius); border: 1px solid var(--border);">
-          <img src="/agency-logo" alt="Agency Logo" style="max-height: 48px; max-width: 100%; object-fit: contain; display: block;" />
-        </div>
-        <p style="font-size: 0.78rem; color: var(--success); margin-bottom: 1rem;">✓ Logo active — appearing on all reports</p>
-        {% else %}
-        <div style="margin-bottom: 1rem; padding: 0.75rem; background: var(--bg-3); border-radius: var(--radius); border: 1px dashed var(--border-2); text-align: center;">
-          <p style="font-size: 0.82rem; color: var(--text-3);">No logo uploaded yet</p>
-        </div>
-        {% endif %}
-
-        <div class="field">
-          <label for="logo-input">{{ 'Replace Logo' if has_logo else 'Choose Logo File' }}</label>
-          <input
-            id="logo-input"
-            type="file"
-            accept="image/png,image/jpeg,image/jpg"
-            onchange="handleLogoSelect(this)"
-            style="font-size: 0.84rem; color: var(--text-2);"
-          />
-          <p class="field-hint">PNG or JPG recommended. Max 5MB. Transparent background works best on dark reports.</p>
+        <div id="drop-zone" class="drop-zone"
+          ondragover="event.preventDefault(); this.classList.add('drag-over')"
+          ondragleave="this.classList.remove('drag-over')"
+          ondrop="handleDrop(event)">
+          <div class="drop-icon">&#9634;</div>
+          <p class="drop-label">Drag video here or <label for="video-input" class="drop-browse">browse</label></p>
+          <p class="drop-hint">MP4 / MOV / AVI &nbsp;|&nbsp; 1080p &nbsp;|&nbsp; 15–60 seconds</p>
+          <input id="video-input" type="file" accept="video/*" style="display:none" onchange="handleFileSelect(this)" />
         </div>
 
-        <button id="logo-btn" class="btn btn-primary" onclick="uploadLogo()" style="margin-top: 0.75rem;" disabled>
-          Upload Logo
+        <div id="file-info" class="file-info hidden">
+          <span id="file-name" class="file-name"></span>
+          <button class="btn-icon" onclick="clearFile()" title="Remove">&#10005;</button>
+        </div>
+
+        <div class="field" style="margin-top:1.25rem">
+          <label for="target-audience">Target Audience <span class="label-optional">(optional)</span></label>
+          <input id="target-audience" type="text" placeholder="e.g. Male 25-34, gym-goers, US market" />
+          <p class="field-hint">The AI will tailor its analysis and recommendations for this audience.</p>
+        </div>
+
+        <div class="field" style="margin-top:0.75rem">
+          <label for="ad-copy">Ad Script / Headline <span class="label-optional">(optional)</span></label>
+          <textarea id="ad-copy" name="ad_copy" rows="4"
+            placeholder="Paste your ad copy here. The AI will score how well it aligns with the attention waveform."></textarea>
+        </div>
+
+        <button id="submit-btn" class="btn btn-primary btn-full" onclick="submitAnalysis()" disabled style="margin-top:1rem;">
+          Run Audit
         </button>
-        <div id="logo-success" class="alert alert-success hidden" style="margin-top: 0.75rem;"></div>
-        <div id="logo-error" class="alert alert-error hidden" style="margin-top: 0.75rem;"></div>
+        <div id="upload-error" class="alert alert-error hidden"></div>
       </section>
 
+      <div style="display:flex; flex-direction:column; gap:1.25rem;">
+        <!-- Recent Jobs -->
+        <section class="card">
+          <h2 class="card-title">Recent Jobs</h2>
+          {% set jobs = recent_jobs | list %}
+          {% if jobs %}
+          <div class="job-list">
+            {% for job in jobs %}
+            <div class="job-row">
+              <div class="job-meta">
+                <span class="job-file">{{ job.filename or 'Unknown' }}</span>
+                <span class="job-id">{{ job.job_id[:8] }}</span>
+              </div>
+              <div class="job-right">
+                <span class="badge badge-{{ job.status }}">{{ job.status }}</span>
+                {% if job.status == 'done' %}
+                <a href="/result/{{ job.job_id }}" class="btn btn-sm">View</a>
+                {% elif job.status == 'running' or job.status == 'queued' %}
+                <a href="/progress/{{ job.job_id }}" class="btn btn-sm">Track</a>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="empty-state"><p>No analyses yet. Upload a video to begin.</p></div>
+          {% endif %}
+        </section>
+
+        <!-- Agency Logo -->
+        <section class="card">
+          <h2 class="card-title">Agency Logo</h2>
+          <p class="text-muted" style="margin-bottom:1rem; font-size:0.84rem;">Upload your logo — it appears on every PDF report automatically.</p>
+          {% if has_logo %}
+          <div style="margin-bottom:0.75rem; padding:0.75rem; background:var(--bg-3); border-radius:var(--radius); border:1px solid var(--border);">
+            <img src="/agency-logo" alt="Logo" style="max-height:48px; max-width:100%; object-fit:contain; display:block;" />
+          </div>
+          <p style="font-size:0.78rem; color:var(--success); margin-bottom:0.75rem;">✓ Logo active on all reports</p>
+          {% else %}
+          <div style="margin-bottom:0.75rem; padding:0.75rem; background:var(--bg-3); border-radius:var(--radius); border:1px dashed var(--border-2); text-align:center;">
+            <p style="font-size:0.82rem; color:var(--text-3);">No logo uploaded yet</p>
+          </div>
+          {% endif %}
+          <input id="logo-input" type="file" accept="image/png,image/jpeg" onchange="handleLogoSelect(this)" style="font-size:0.84rem; color:var(--text-2);" />
+          <p class="field-hint">PNG or JPG. Transparent background works best.</p>
+          <button id="logo-btn" class="btn btn-primary" onclick="uploadLogo()" style="margin-top:0.75rem;" disabled>Upload Logo</button>
+          <div id="logo-success" class="alert alert-success hidden" style="margin-top:0.5rem;"></div>
+          <div id="logo-error" class="alert alert-error hidden" style="margin-top:0.5rem;"></div>
+        </section>
+      </div>
     </div>
+  </div>
+
+  <!-- Compare Tab -->
+  <div id="panel-compare" style="display:none;">
+    <section class="card" style="max-width:700px;">
+      <h2 class="card-title">Compare Two Videos</h2>
+      <p class="text-muted" style="margin-bottom:1.5rem; font-size:0.84rem;">Upload two ads to see their neural attention waveforms side by side.</p>
+
+      <div class="grid-2" style="gap:1rem; margin-bottom:1rem;">
+        <div class="field">
+          <label>Video A</label>
+          <input id="video-a" type="file" accept="video/*" onchange="setCompareFile('a', this)" style="font-size:0.84rem; color:var(--text-2);" />
+          <p id="file-a-name" class="field-hint"></p>
+        </div>
+        <div class="field">
+          <label>Video B</label>
+          <input id="video-b" type="file" accept="video/*" onchange="setCompareFile('b', this)" style="font-size:0.84rem; color:var(--text-2);" />
+          <p id="file-b-name" class="field-hint"></p>
+        </div>
+      </div>
+
+      <button id="compare-btn" class="btn btn-primary" onclick="submitCompare()" disabled>Run Comparison</button>
+      <div id="compare-error" class="alert alert-error hidden" style="margin-top:0.75rem;"></div>
+    </section>
   </div>
 </div>
 {% endblock %}
@@ -130,27 +137,31 @@
 <script>
 let selectedFile = null;
 let selectedLogo = null;
+let compareFileA = null;
+let compareFileB = null;
 
-// ── Video upload ──────────────────────────────────────────────
+function showTab(tab) {
+  document.getElementById('panel-single').style.display  = tab === 'single'  ? '' : 'none';
+  document.getElementById('panel-compare').style.display = tab === 'compare' ? '' : 'none';
+  document.getElementById('tab-single').className  = tab === 'single'  ? 'btn btn-primary' : 'btn btn-ghost';
+  document.getElementById('tab-compare').className = tab === 'compare' ? 'btn btn-primary' : 'btn btn-ghost';
+}
+
+// ── Single video ──────────────────────────────────────────────
 function handleDrop(e) {
   e.preventDefault();
   document.getElementById('drop-zone').classList.remove('drag-over');
   const file = e.dataTransfer.files[0];
   if (file) setFile(file);
 }
-
-function handleFileSelect(input) {
-  if (input.files[0]) setFile(input.files[0]);
-}
-
+function handleFileSelect(input) { if (input.files[0]) setFile(input.files[0]); }
 function setFile(file) {
   selectedFile = file;
-  document.getElementById('file-name').textContent = file.name + '  (' + (file.size / 1048576).toFixed(1) + ' MB)';
+  document.getElementById('file-name').textContent = file.name + '  (' + (file.size/1048576).toFixed(1) + ' MB)';
   document.getElementById('file-info').classList.remove('hidden');
   document.getElementById('drop-zone').classList.add('has-file');
   document.getElementById('submit-btn').disabled = false;
 }
-
 function clearFile() {
   selectedFile = null;
   document.getElementById('file-info').classList.add('hidden');
@@ -163,68 +174,99 @@ async function submitAnalysis() {
   if (!selectedFile) return;
   const btn = document.getElementById('submit-btn');
   const errBox = document.getElementById('upload-error');
-  btn.disabled = true;
-  btn.textContent = 'Uploading...';
+  btn.disabled = true; btn.textContent = 'Uploading...';
   errBox.classList.add('hidden');
-
   const fd = new FormData();
   fd.append('video', selectedFile);
   fd.append('ad_copy', document.getElementById('ad-copy').value);
-
+  fd.append('target_audience', document.getElementById('target-audience').value);
   try {
     const res = await fetch('/analyze', { method: 'POST', body: fd });
-    if (!res.ok) {
-      const d = await res.json();
-      throw new Error(d.detail || 'Upload failed.');
-    }
+    if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Upload failed.'); }
     const data = await res.json();
     window.location.href = '/progress/' + data.job_id;
   } catch (err) {
-    errBox.textContent = err.message;
-    errBox.classList.remove('hidden');
-    btn.disabled = false;
-    btn.textContent = 'Run Audit';
+    errBox.textContent = err.message; errBox.classList.remove('hidden');
+    btn.disabled = false; btn.textContent = 'Run Audit';
   }
 }
 
-// ── Logo upload ───────────────────────────────────────────────
+// ── Compare ───────────────────────────────────────────────────
+function setCompareFile(which, input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (which === 'a') { compareFileA = file; document.getElementById('file-a-name').textContent = file.name; }
+  else               { compareFileB = file; document.getElementById('file-b-name').textContent = file.name; }
+  document.getElementById('compare-btn').disabled = !(compareFileA && compareFileB);
+}
+
+async function submitCompare() {
+  if (!compareFileA || !compareFileB) return;
+  const btn = document.getElementById('compare-btn');
+  const errBox = document.getElementById('compare-error');
+  btn.disabled = true; btn.textContent = 'Uploading...';
+  errBox.classList.add('hidden');
+  const fd = new FormData();
+  fd.append('video_a', compareFileA);
+  fd.append('video_b', compareFileB);
+  try {
+    const res = await fetch('/compare', { method: 'POST', body: fd });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Upload failed.'); }
+    const data = await res.json();
+    btn.textContent = 'Processing... (this may take a few minutes)';
+    // Poll until both done then redirect
+    pollCompare(data.job_a, data.job_b);
+  } catch (err) {
+    errBox.textContent = err.message; errBox.classList.remove('hidden');
+    btn.disabled = false; btn.textContent = 'Run Comparison';
+  }
+}
+
+async function pollCompare(jobA, jobB) {
+  try {
+    const [ra, rb] = await Promise.all([
+      fetch('/status/' + jobA).then(r => r.json()),
+      fetch('/status/' + jobB).then(r => r.json()),
+    ]);
+    if (ra.status === 'error' || rb.status === 'error') {
+      document.getElementById('compare-error').textContent = 'One or both videos failed to process.';
+      document.getElementById('compare-error').classList.remove('hidden');
+      document.getElementById('compare-btn').disabled = false;
+      document.getElementById('compare-btn').textContent = 'Run Comparison';
+      return;
+    }
+    if (ra.status === 'done' && rb.status === 'done') {
+      window.location.href = `/compare/${jobA}/${jobB}`;
+      return;
+    }
+    setTimeout(() => pollCompare(jobA, jobB), 3000);
+  } catch(e) {
+    setTimeout(() => pollCompare(jobA, jobB), 3000);
+  }
+}
+
+// ── Logo ──────────────────────────────────────────────────────
 function handleLogoSelect(input) {
-  if (input.files[0]) {
-    selectedLogo = input.files[0];
-    document.getElementById('logo-btn').disabled = false;
-  }
+  if (input.files[0]) { selectedLogo = input.files[0]; document.getElementById('logo-btn').disabled = false; }
 }
-
 async function uploadLogo() {
   if (!selectedLogo) return;
-  const btn     = document.getElementById('logo-btn');
+  const btn = document.getElementById('logo-btn');
   const success = document.getElementById('logo-success');
-  const errBox  = document.getElementById('logo-error');
-
-  btn.disabled = true;
-  btn.textContent = 'Uploading...';
-  success.classList.add('hidden');
-  errBox.classList.add('hidden');
-
+  const errBox = document.getElementById('logo-error');
+  btn.disabled = true; btn.textContent = 'Uploading...';
+  success.classList.add('hidden'); errBox.classList.add('hidden');
   const fd = new FormData();
   fd.append('logo', selectedLogo);
-
   try {
     const res = await fetch('/upload-logo', { method: 'POST', body: fd });
-    if (!res.ok) {
-      const d = await res.json();
-      throw new Error(d.detail || 'Upload failed.');
-    }
-    success.textContent = '✓ Logo uploaded! It will appear on all future PDF reports.';
+    if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Upload failed.'); }
+    success.textContent = '✓ Logo uploaded! Appearing on all future reports.';
     success.classList.remove('hidden');
-    btn.textContent = 'Upload Logo';
-    // Reload page after 1.5s to show the preview
     setTimeout(() => window.location.reload(), 1500);
   } catch (err) {
-    errBox.textContent = err.message;
-    errBox.classList.remove('hidden');
-    btn.disabled = false;
-    btn.textContent = 'Upload Logo';
+    errBox.textContent = err.message; errBox.classList.remove('hidden');
+    btn.disabled = false; btn.textContent = 'Upload Logo';
   }
 }
 </script>

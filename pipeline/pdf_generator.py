@@ -113,6 +113,7 @@ class PDFGenerator:
         return items
 
     def _section_graph(self, S, doc, brain_result, peak_frame_path):
+        peak_sec = brain_result.get("peak_engagement_sec", 0)
         items = [
             Paragraph("ATTENTION WAVEFORM  //  CORTICAL SURFACE OUTPUT", S["section_label"]),
             Spacer(1, 2*mm),
@@ -120,37 +121,35 @@ class PDFGenerator:
 
         waveform_png = Path(brain_result.get("waveform_png_path", ""))
 
-        if peak_frame_path and Path(peak_frame_path).exists() and waveform_png.exists():
-            img_w = doc.width * 0.78
-            img_h = img_w * (4/12)
-            peak_img_w = doc.width * 0.20
-            peak_img_h = peak_img_w * (9/16)
-            graph_table = Table(
-                [[
-                    Image(str(waveform_png), width=img_w, height=img_h),
-                    Table([[
-                        Paragraph("PEAK FRAME", S["notice"]),
-                        Image(str(peak_frame_path), width=peak_img_w, height=peak_img_h),
-                        Paragraph(f"@ {brain_result.get('peak_engagement_sec', 0):.2f}s", S["notice"]),
-                    ]], colWidths=[peak_img_w]),
-                ]],
-                colWidths=[img_w, doc.width * 0.22],
-            )
-            graph_table.setStyle(TableStyle([
-                ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
-                ("BACKGROUND",   (0,0), (-1,-1), BLACK),
-                ("LEFTPADDING",  (0,0), (-1,-1), 0),
-                ("RIGHTPADDING", (0,0), (-1,-1), 4),
-                ("TOPPADDING",   (0,0), (-1,-1), 0),
-                ("BOTTOMPADDING",(0,0), (-1,-1), 0),
-            ]))
-            items.append(graph_table)
-        elif waveform_png.exists():
+        # Waveform — always full width
+        if waveform_png.exists():
             img_w = doc.width
             img_h = img_w * (4/12)
             items.append(Image(str(waveform_png), width=img_w, height=img_h))
         else:
             items.append(Paragraph("[ WAVEFORM NOT AVAILABLE ]", S["notice"]))
+
+        # Peak frame — on next line below waveform
+        if peak_frame_path and Path(peak_frame_path).exists():
+            items.append(Spacer(1, 4*mm))
+            peak_img_w = 72*mm
+            peak_img_h = peak_img_w * (9/16)
+            peak_table = Table(
+                [[
+                    Paragraph(f"PEAK FRAME  @  {peak_sec:.1f}s", S["section_label"]),
+                    Image(str(peak_frame_path), width=peak_img_w, height=peak_img_h),
+                ]],
+                colWidths=[doc.width - peak_img_w - 4*mm, peak_img_w],
+            )
+            peak_table.setStyle(TableStyle([
+                ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+                ("BACKGROUND",    (0,0), (-1,-1), BLACK),
+                ("LEFTPADDING",   (0,0), (-1,-1), 0),
+                ("RIGHTPADDING",  (0,0), (-1,-1), 0),
+                ("TOPPADDING",    (0,0), (-1,-1), 0),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 0),
+            ]))
+            items.append(peak_table)
 
         items += [Spacer(1, 4*mm), HRFlowable(width="100%", thickness=0.3, color=MID_GREY), Spacer(1, 4*mm)]
         return items

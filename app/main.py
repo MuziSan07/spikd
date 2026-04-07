@@ -239,10 +239,9 @@ async def run_pipeline(job_id: str, video_path: str, ad_copy: str, target_audien
         try:
             import cv2
             peak_sec = brain_result.get("peak_engagement_sec", 0)
-            fps      = brain_result.get("fps", 24)
-            peak_frame_idx = int(peak_sec * fps)
             cap = cv2.VideoCapture(video_path)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, peak_frame_idx)
+            # Use millisecond seek — works correctly regardless of segment vs frame mode
+            cap.set(cv2.CAP_PROP_POS_MSEC, peak_sec * 1000)
             ret, frame = cap.read()
             cap.release()
             if ret:
@@ -250,7 +249,7 @@ async def run_pipeline(job_id: str, video_path: str, ad_copy: str, target_audien
                 peak_frame_path = str(job_dir / "peak_frame.jpg")
                 cv2.imwrite(peak_frame_path, frame)
         except Exception as e:
-            pass
+            logger.error("Peak frame capture failed: %s", e)
 
         update(55, "Running AI alignment analysis...")
         llm_result = await loop.run_in_executor(

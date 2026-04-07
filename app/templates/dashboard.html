@@ -86,22 +86,25 @@
         <!-- Agency Logo -->
         <section class="card">
           <h2 class="card-title">Agency Logo</h2>
-          <p class="text-muted" style="margin-bottom:1rem; font-size:0.84rem;">Upload your logo — it appears on every PDF report automatically.</p>
-          {% if has_logo %}
-          <div style="margin-bottom:0.75rem; padding:0.75rem; background:var(--bg-3); border-radius:var(--radius); border:1px solid var(--border);">
-            <img id="logo-preview" src="/agency-logo?t={{ loop.index if loop is defined else 1 }}" alt="Logo" style="max-height:48px; max-width:100%; object-fit:contain; display:block;" />
+          <p class="text-muted" style="margin-bottom:1rem; font-size:0.84rem;">Choose any image — it instantly becomes your logo on every PDF report.</p>
+
+          <!-- Live preview box -->
+          <div id="logo-box" style="margin-bottom:1rem; padding:1rem; background:var(--bg-3); border-radius:var(--radius); border:1px solid var(--border); min-height:64px; display:flex; align-items:center; justify-content:center;">
+            {% if has_logo %}
+            <img id="logo-preview" src="/agency-logo?t=1" alt="Logo" style="max-height:56px; max-width:100%; object-fit:contain;" />
+            {% else %}
+            <p id="logo-placeholder" style="font-size:0.82rem; color:var(--text-3); margin:0;">No logo yet — choose a file below</p>
+            {% endif %}
           </div>
-          <p style="font-size:0.78rem; color:var(--success); margin-bottom:0.75rem;">✓ Logo active on all reports</p>
-          {% else %}
-          <div style="margin-bottom:0.75rem; padding:0.75rem; background:var(--bg-3); border-radius:var(--radius); border:1px dashed var(--border-2); text-align:center;">
-            <p style="font-size:0.82rem; color:var(--text-3);">No logo uploaded yet</p>
-          </div>
-          {% endif %}
-          <input id="logo-input" type="file" accept="image/png,image/jpeg" onchange="handleLogoSelect(this)" style="font-size:0.84rem; color:var(--text-2);" />
-          <p class="field-hint">PNG or JPG. Transparent background works best.</p>
-          <button id="logo-btn" class="btn btn-primary" onclick="uploadLogo()" style="margin-top:0.75rem;" disabled>Upload Logo</button>
-          <div id="logo-success" class="alert alert-success hidden" style="margin-top:0.5rem;"></div>
-          <div id="logo-error" class="alert alert-error hidden" style="margin-top:0.5rem;"></div>
+
+          <div id="logo-status" style="font-size:0.78rem; margin-bottom:0.75rem; min-height:1.2rem;"></div>
+
+          <!-- Simple file picker — selecting auto-uploads -->
+          <label for="logo-input" class="btn btn-primary" style="cursor:pointer; display:inline-block;">
+            {% if has_logo %}Replace Logo{% else %}Choose Logo{% endif %}
+          </label>
+          <input id="logo-input" type="file" accept="image/png,image/jpeg,image/jpg,image/webp" style="display:none;" onchange="autoUploadLogo(this)" />
+          <p class="field-hint" style="margin-top:0.5rem;">PNG, JPG or WEBP. Selecting a file uploads it instantly.</p>
         </section>
       </div>
     </div>
@@ -252,32 +255,35 @@ async function pollCompare(jobA, jobB) {
   }
 }
 
-// ── Logo ──────────────────────────────────────────────────────
-function handleLogoSelect(input) {
-  if (input.files[0]) { selectedLogo = input.files[0]; document.getElementById('logo-btn').disabled = false; }
-}
-async function uploadLogo() {
-  if (!selectedLogo) return;
-  const btn = document.getElementById('logo-btn');
-  const success = document.getElementById('logo-success');
-  const errBox = document.getElementById('logo-error');
-  btn.disabled = true; btn.textContent = 'Uploading...';
-  success.classList.add('hidden'); errBox.classList.add('hidden');
+// ── Logo — select file = instant upload + preview ────────────
+async function autoUploadLogo(input) {
+  if (!input.files[0]) return;
+  const file = input.files[0];
+  const status = document.getElementById('logo-status');
+  const box    = document.getElementById('logo-box');
+
+  // Show instant local preview before upload
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    box.innerHTML = `<img id="logo-preview" src="${e.target.result}" alt="Logo" style="max-height:56px; max-width:100%; object-fit:contain;" />`;
+  };
+  reader.readAsDataURL(file);
+
+  status.style.color = 'var(--text-2)';
+  status.textContent = 'Uploading...';
+
   const fd = new FormData();
-  fd.append('logo', selectedLogo);
+  fd.append('logo', file);
   try {
     const res = await fetch('/upload-logo', { method: 'POST', body: fd });
     if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Upload failed.'); }
-    success.textContent = '✓ Logo uploaded! Appearing on all future reports.';
-    success.classList.remove('hidden');
-    // Refresh logo preview without full page reload
-    const preview = document.getElementById('logo-preview');
-    if (preview) preview.src = '/agency-logo?t=' + Date.now();
-    btn.textContent = 'Upload Logo';
-    setTimeout(() => window.location.reload(), 2000);
+    status.style.color = 'var(--success)';
+    status.textContent = '✓ Logo saved — appearing on all future PDF reports.';
+    // Update label text
+    document.querySelector('label[for="logo-input"]').textContent = 'Replace Logo';
   } catch (err) {
-    errBox.textContent = err.message; errBox.classList.remove('hidden');
-    btn.disabled = false; btn.textContent = 'Upload Logo';
+    status.style.color = 'var(--danger)';
+    status.textContent = '✗ ' + err.message;
   }
 }
 </script>

@@ -463,15 +463,19 @@ class TribeProcessor:
         T = len(waveform)
 
         # Step 5 — Metrics
-        peak_idx           = int(np.argmax(waveform))
-        drop_idx           = self._find_drop(waveform)
-        peak_engagement_sec = peak_idx / fps
-        drop_timestamp_sec  = drop_idx / fps
+        # IMPORTANT: T may be segments (TRIBE v2 real mode) not frames.
+        # Use duration_sec / T as the time-per-step to get correct timestamps.
+        peak_idx            = int(np.argmax(waveform))
+        drop_idx            = self._find_drop(waveform)
+        sec_per_step        = duration_sec / T if T > 0 else 1.0 / fps
+        peak_engagement_sec = peak_idx * sec_per_step
+        drop_timestamp_sec  = drop_idx * sec_per_step
 
         # Step 6 — Render waveform PNG
+        # Pass sec_per_step so the x-axis is correct regardless of segment vs frame mode
         out_dir  = Path(video_path).parent
         png_path = str(out_dir / "waveform.png")
-        self._render_waveform(waveform, fps, drop_idx, peak_idx, png_path)
+        self._render_waveform(waveform, sec_per_step, drop_idx, peak_idx, png_path)
 
         return {
             "waveform":             waveform.tolist(),
@@ -553,7 +557,7 @@ class TribeProcessor:
     def _render_waveform(
         self,
         waveform: np.ndarray,
-        fps: float,
+        sec_per_step: float,
         drop_idx: int,
         peak_idx: int,
         out_path: str,
@@ -561,9 +565,10 @@ class TribeProcessor:
         """
         Stark monochrome 2D line graph.
         Electric white line, no fill, pitch black background.
+        sec_per_step = duration_sec / T (works for both frames and segments)
         """
         T     = len(waveform)
-        times = np.arange(T) / fps
+        times = np.arange(T) * sec_per_step
 
         fig, ax = plt.subplots(figsize=(12, 4), facecolor="#000000")
         ax.set_facecolor("#000000")
@@ -616,7 +621,3 @@ class TribeProcessor:
         plt.savefig(out_path, dpi=150, bbox_inches="tight", facecolor="#000000")
         plt.close(fig)
         logger.info("Waveform PNG saved: %s", out_path)
-
-
-
-

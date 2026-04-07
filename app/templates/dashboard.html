@@ -126,7 +126,13 @@
         </div>
       </div>
 
-      <button id="compare-btn" class="btn btn-primary" onclick="submitCompare()" disabled>Run Comparison</button>
+      <div class="field" style="margin-top:0.75rem;">
+        <label for="compare-audience">Target Audience <span class="label-optional">(optional)</span></label>
+        <input id="compare-audience" type="text" placeholder="e.g. Female 18-24, fashion-conscious, UK market" />
+        <p class="field-hint">The AI will tailor its comparison and recommendations for this audience.</p>
+      </div>
+
+      <button id="compare-btn" class="btn btn-primary" onclick="submitCompare()" disabled style="margin-top:0.75rem;">Run Comparison</button>
       <div id="compare-error" class="alert alert-error hidden" style="margin-top:0.75rem;"></div>
     </section>
   </div>
@@ -209,6 +215,7 @@ async function submitCompare() {
   const fd = new FormData();
   fd.append('video_a', compareFileA);
   fd.append('video_b', compareFileB);
+  fd.append('target_audience', document.getElementById('compare-audience').value);
   try {
     const res = await fetch('/compare', { method: 'POST', body: fd });
     if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Upload failed.'); }

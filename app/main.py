@@ -191,6 +191,7 @@ async def compare(
     request: Request,
     video_a: UploadFile = File(...),
     video_b: UploadFile = File(...),
+    target_audience: str = Form(""),
     user: str = Depends(require_login),
 ):
     for v in [video_a, video_b]:
@@ -209,14 +210,14 @@ async def compare(
         JOBS[job_id] = {
             "user": user, "status": "queued", "progress": 0,
             "message": "Job queued.", "filename": video.filename,
-            "ad_copy": "", "target_audience": "", "result_path": None,
+            "ad_copy": "", "target_audience": target_audience, "result_path": None,
             "llm_summary": "", "alignment": "", "alignment_score": "N/A",
             "key_findings": [], "recommendations": [],
             "peak_engagement_sec": "", "drop_timestamp_sec": "",
             "duration_sec": "", "fps": "", "n_frames": "",
             "peak_frame_path": None,
         }
-        asyncio.create_task(run_pipeline(job_id, str(video_path), "", "", user))
+        asyncio.create_task(run_pipeline(job_id, str(video_path), "", target_audience, user))
 
     return JSONResponse({"job_a": job_a, "job_b": job_b})
 

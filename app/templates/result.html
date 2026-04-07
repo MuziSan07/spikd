@@ -7,7 +7,10 @@
   <div class="page-header page-header-row">
     <div>
       <h1 class="page-title">Analysis Report</h1>
-      <p class="page-subtitle">Job <code>{{ job_id[:16] }}</code>{% if job.target_audience %} &nbsp;|&nbsp; Audience: <strong>{{ job.target_audience }}</strong>{% endif %}</p>
+      <p class="page-subtitle">
+        Job <code>{{ job_id[:16] }}</code>
+        {% if job.target_audience %}&nbsp;|&nbsp; Audience: <strong>{{ job.target_audience }}</strong>{% endif %}
+      </p>
     </div>
     <div class="header-actions">
       <a href="/download/{{ job_id }}" class="btn btn-primary">Download PDF</a>
@@ -19,15 +22,18 @@
   <!-- Waveform + Peak Frame -->
   <section class="card" style="margin-bottom:1.25rem;">
     <h2 class="card-title">Attention Waveform</h2>
-    <p class="text-muted" style="margin-bottom:1rem;">Normalised DAN + Primary Visual Cortex activation. Peak frame captured automatically.</p>
+    <p class="text-muted" style="margin-bottom:1rem;">
+      Normalised DAN + Primary Visual Cortex activation. Peak frame captured automatically.
+    </p>
     {% if peak_frame_img %}
-    <div style="display:grid; grid-template-columns: 1fr auto; gap:1.25rem; align-items:start;">
+    <div style="display:grid; grid-template-columns: 1fr 200px; gap:1.25rem; align-items:start;">
       <div class="waveform-wrap">
         <img src="{{ waveform_img }}" alt="Attention waveform" class="waveform-img" />
       </div>
       <div style="text-align:center;">
         <p style="font-size:0.75rem; color:var(--text-3); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Peak Frame</p>
-        <img src="{{ peak_frame_img }}" alt="Peak frame" style="width:180px; height:101px; object-fit:cover; border-radius:var(--radius); border:1px solid var(--border);" />
+        <img src="{{ peak_frame_img }}" alt="Peak frame"
+          style="width:180px; height:101px; object-fit:cover; border-radius:var(--radius); border:1px solid var(--border);" />
         <p style="font-size:0.72rem; color:var(--text-3); margin-top:0.4rem;">@ {{ job.peak_engagement_sec }}s</p>
       </div>
     </div>
@@ -45,11 +51,11 @@
       <h2 class="card-title">Key Metrics</h2>
       <table class="metrics-table">
         <tbody>
-          <tr><td>Peak Engagement</td><td>{{ job.peak_engagement_sec | default('—') }}s</td></tr>
-          <tr><td>Engagement Drop</td><td>{{ job.drop_timestamp_sec  | default('—') }}s</td></tr>
-          <tr><td>Video Duration</td> <td>{{ job.duration_sec        | default('—') }}s</td></tr>
-          <tr><td>Frames Processed</td><td>{{ job.n_frames           | default('—') }}</td></tr>
-          <tr><td>FPS</td>            <td>{{ job.fps                 | default('—') }}</td></tr>
+          <tr><td>Peak Engagement</td><td><strong>{{ job.peak_engagement_sec | default('—') }}s</strong></td></tr>
+          <tr><td>Engagement Drop</td><td>{{ job.drop_timestamp_sec | default('—') }}s</td></tr>
+          <tr><td>Video Duration</td> <td>{{ job.duration_sec | default('—') }}s</td></tr>
+          <tr><td>Frames Processed</td><td>{{ job.n_frames | default('—') }}</td></tr>
+          <tr><td>FPS</td>            <td>{{ job.fps | default('—') }}</td></tr>
           <tr><td>Regions</td>        <td>DAN + V1</td></tr>
           <tr><td>Atlas</td>          <td>Glasser MMP1.0</td></tr>
         </tbody>
@@ -75,10 +81,13 @@
   {% if job.recommendations %}
   <section class="card" style="margin-top:1.25rem;">
     <h2 class="card-title">3 Recommended Edits</h2>
-    <p class="text-muted" style="margin-bottom:1rem; font-size:0.84rem;">Specific, actionable changes to improve attention performance.</p>
+    <p class="text-muted" style="margin-bottom:1rem; font-size:0.84rem;">
+      Specific, actionable changes to improve attention performance.
+    </p>
     <div style="display:flex; flex-direction:column; gap:0.75rem;">
       {% for rec in job.recommendations %}
-      <div style="display:flex; gap:1rem; align-items:flex-start; padding:0.875rem; background:var(--bg-3); border-radius:var(--radius); border:1px solid var(--border);">
+      <div style="display:flex; gap:1rem; align-items:flex-start; padding:0.875rem;
+                  background:var(--bg-3); border-radius:var(--radius); border:1px solid var(--border);">
         <span style="font-size:1.1rem; font-weight:700; color:var(--accent); min-width:1.5rem;">{{ loop.index }}</span>
         <p style="font-size:0.88rem; color:var(--text); line-height:1.5;">{{ rec }}</p>
       </div>
@@ -97,17 +106,19 @@
         <blockquote class="ad-quote">{{ job.ad_copy }}</blockquote>
         {% if job.target_audience %}
         <p class="label-text" style="margin-top:1rem;">Target Audience</p>
-        <p class="body-text">{{ job.target_audience }}</p>
+        <p class="body-text" style="margin-top:0.25rem;">{{ job.target_audience }}</p>
         {% endif %}
       </div>
       <div>
         <p class="label-text">Alignment Score</p>
-        <div class="score-badge score-{{ job.alignment_score | lower | default('na') }}">
+        <div class="score-badge score-{{ (job.alignment_score or 'na') | lower }}">
           {{ job.alignment_score | default('N/A') }}
         </div>
-        <p class="body-text" style="margin-top:1rem;">
-          {{ job.alignment | default('No alignment analysis available.') }}
-        </p>
+        {% if job.alignment and job.alignment != 'None' and job.alignment != '' %}
+        <p class="body-text" style="margin-top:1rem;">{{ job.alignment }}</p>
+        {% else %}
+        <p class="body-text" style="margin-top:1rem; color:var(--text-3);">No alignment analysis available.</p>
+        {% endif %}
       </div>
     </div>
   </section>

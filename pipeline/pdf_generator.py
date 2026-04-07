@@ -178,11 +178,11 @@ class PDFGenerator:
 
         rows = [
             ["METRIC", "VALUE", "INTERPRETATION"],
-            ["Peak Engagement",       fmt(peak_sec),          f"Highest cortical activation — frame {int(peak_sec * fps)} of {n_frames}"],
+            ["Peak Engagement",       fmt(peak_sec),          f"Highest cortical activation at {peak_sec:.1f}s"],
             ["Hook Strength (0-1)",   f"{hook_strength:.4f}", "Mean activation across first 20% of video"],
             ["Attention Decay Rate",  f"{decay_rate:+.5f}/sec","Slope post-peak. Negative = losing attention"],
-            ["Engagement Drop At",    fmt(drop_sec),          "Timestamp of sharpest post-peak decline"],
-            ["Total Duration",        fmt(duration_sec),      f"{n_frames} frames at {fps:.1f} fps"],
+            ["Engagement Drop At",    fmt(drop_sec),          f"Sharpest attention decline at {drop_sec:.1f}s"],
+            ["Total Duration",        fmt(duration_sec),      f"{duration_sec:.1f} seconds at {fps:.1f} fps"],
         ]
 
         col_w = [doc.width*0.35, doc.width*0.19, doc.width*0.46]

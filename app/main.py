@@ -32,7 +32,9 @@ async def redirect_exception_handler(request: Request, exc: RedirectException):
     return RedirectResponse(url=exc.url, status_code=302)
 
 BASE_DIR  = Path(__file__).parent
-LOGO_PATH = Path("/workspace/spikd/app/static/agency_logo.png")
+# Resolve the logo relative to this package so the app is portable across
+# deployments (previously hard-coded to /workspace/spikd/...).
+LOGO_PATH = BASE_DIR / "static" / "agency_logo.png"
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")

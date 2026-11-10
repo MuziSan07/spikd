@@ -1,5 +1,7 @@
 import os
 import hashlib
+import secrets
+import warnings
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -7,16 +9,47 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).parent
 
+# Known placeholder values that must never be used as a real signing key.
+_PLACEHOLDER_SECRETS = {
+    "",
+    "CHANGE_THIS_SECRET_KEY_IN_ENV",
+    "REPLACE_WITH_A_STRONG_RANDOM_SECRET",
+}
+
 
 def _hash(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
+
+
+def _resolve_session_secret() -> str:
+    """Return the configured session secret, or a temporary random one.
+
+    A predictable signing key lets anyone forge session cookies and bypass
+    authentication, so the known placeholder values are rejected. When no
+    secure value is set, a random per-process secret is generated and a
+    warning is emitted; sessions then do not persist across restarts or
+    multiple workers, which is acceptable for local use but must be fixed for
+    production by setting SESSION_SECRET in the environment.
+    """
+    value = os.getenv("SESSION_SECRET", "")
+    if value and value not in _PLACEHOLDER_SECRETS:
+        return value
+    warnings.warn(
+        "SESSION_SECRET is not set to a secure value; generating a temporary "
+        "random secret for this process. Set SESSION_SECRET in your .env "
+        "(python3 -c \"import secrets; print(secrets.token_hex(32))\") for "
+        "production so sessions remain valid across restarts.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+    return secrets.token_hex(32)
 
 
 class Settings:
     # ── Server ──────────────────────────────────────────────────
     HOST: str            = os.getenv("HOST", "0.0.0.0")
     PORT: int            = int(os.getenv("PORT", 8000))
-    SESSION_SECRET: str  = os.getenv("SESSION_SECRET", "CHANGE_THIS_SECRET_KEY_IN_ENV")
+    SESSION_SECRET: str  = _resolve_session_secret()
 
     # ── Storage ──────────────────────────────────────────────────
     SESSION_DIR: str     = os.getenv("SESSION_DIR", str(BASE_DIR / "data" / "sessions"))
@@ -57,6 +90,16 @@ class Settings:
 
 
 settings = Settings()
+
+# Warn once if the built-in default credentials are still in use.
+if not os.getenv("SPIKD_USERS") and os.getenv("ADMIN_PASS", "spikd2024") == "spikd2024":
+    warnings.warn(
+        "Using the default admin credentials (admin / spikd2024). Set "
+        "SPIKD_USERS or ADMIN_USER/ADMIN_PASS in your .env before exposing "
+        "this service.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 # Ensure directories exist
 Path(settings.SESSION_DIR).mkdir(parents=True, exist_ok=True)
